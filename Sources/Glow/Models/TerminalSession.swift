@@ -95,6 +95,7 @@ final class TerminalSession: ObservableObject, Identifiable, LocalProcessTermina
         let text = String(data: data, encoding: .utf8) ?? ""
         var lines = text.components(separatedBy: "\n")
         if lines.last == "" { lines.removeLast() }
+        guard !lines.isEmpty else { return }
 
         var start = 0
         if let anchor = blockAnchorText {
