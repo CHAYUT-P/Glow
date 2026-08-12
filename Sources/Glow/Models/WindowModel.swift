@@ -1,0 +1,339 @@
+import AppKit
+import Combine
+import SwiftTerm
+import SwiftUI
+
+/// What a new window should contain. Used as the WindowGroup scene value so
+/// "Open Layout" can spawn a window that already has the layout's tabs running.
+enum GlowWindowRequest: Hashable, Codable {
+    case plain
+    case layout(SavedLayout)
+}
+
+/// Per-window state: the tabs, selection, sidebar/find UI state, and the
+/// attention timer that watches background output.
+final class WindowModel: ObservableObject {
+    @Published var tabs: [TerminalSession] = []
+    @Published var selectedTabID: UUID?
+    @Published var sidebarVisible = true
+    @Published var selectedFolder: String?
+
+    @Published var findVisible = false
+    @Published var findText = ""
+    @Published var findCaseSensitive = false
+    @Published var findMatchIndex = 0
+    @Published var findMatchTotal = 0
+    @Published var findFocusRequest = 0
+
+    @Published var isKeyWindow = false
+
+    weak var window: NSWindow?
+
+    private var attentionTimer: Timer?
+    private var observers: [NSObjectProtocol] = []
+    private var appSettingsObserver: NSObjectProtocol?
+
+    var selectedSession: TerminalSession? {
+        guard let id = selectedTabID else { return nil }
+        return tabs.first { $0.id == id }
+    }
+
+    private var homeDirectory: String {
+        FileManager.default.homeDirectoryForCurrentUser.path
+    }
+
+    init(request: GlowWindowRequest) {
+        switch request {
+        case .plain:
+            if AppModel.shared.consumeRestoreOnLaunch(), let last = AppModel.shared.layouts.last {
+                restore(layout: last)
+            } else {
+                newTab(folder: homeDirectory, title: nil, colorHex: nil, startCommand: nil)
+            }
+        case .layout(let layout):
+            restore(layout: layout)
+        }
+        startAttentionTimer()
+        observeNotifications()
+    }
+
+    deinit {
+        attentionTimer?.invalidate()
+        observers.forEach { NotificationCenter.default.removeObserver($0) }
+        if let appSettingsObserver { NotificationCenter.default.removeObserver(appSettingsObserver) }
+        tabs.forEach { $0.close() }
+    }
+
+    // MARK: - Tabs
+
+    func newTab(folder: String? = nil, title: String? = nil, colorHex: String? = nil,
+                startCommand: String? = nil, select: Bool = true) {
+        let dir = folder ?? selectedFolder ?? selectedSession?.cwd ?? homeDirectory
+        let session = TerminalSession(folder: dir, title: title, colorHex: colorHex, startCommand: startCommand)
+        tabs.append(session)
+        if select {
+            selectTab(id: session.id)
+        }
+    }
+
+    func selectTab(id: UUID) {
+        selectedTabID = id
+        if let session = tabs.first(where: { $0.id == id }) {
+            session.attention = false
+            selectedFolder = session.cwd
+        }
+    }
+
+    func selectTab(at index: Int) {
+        guard tabs.indices.contains(index) else { return }
+        selectTab(id: tabs[index].id)
+    }
+
+    func closeTab(id: UUID) {
+        guard let index = tabs.firstIndex(where: { $0.id == id }) else { return }
+        let session = tabs[index]
+        tabs.remove(at: index)
+        session.close()
+        if selectedTabID == id {
+            selectedTabID = tabs.last?.id
+        }
+        if tabs.isEmpty {
+            newTab(folder: homeDirectory, title: nil, colorHex: nil, startCommand: nil)
+        }
+    }
+
+    func closeSelectedTab() {
+        if let id = selectedTabID { closeTab(id: id) }
+    }
+
+    func moveTab(from sourceID: UUID, to targetID: UUID) {
+        guard let from = tabs.firstIndex(where: { $0.id == sourceID }),
+              let to = tabs.firstIndex(where: { $0.id == targetID }), from != to else { return }
+        let session = tabs.remove(at: from)
+        tabs.insert(session, at: to)
+    }
+
+    // MARK: - Folders
+
+    func openFolderPanel() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = true
+        panel.prompt = "Open Folder"
+        panel.message = "Choose a folder to open in a new tab"
+        if panel.runModal() == .OK, let url = panel.url {
+            AppModel.shared.addRecent(url.path)
+            newTab(folder: url.path)
+        }
+    }
+
+    func openFolderInNewTab(_ path: String) {
+        AppModel.shared.addRecent(path)
+        newTab(folder: path)
+    }
+
+    // MARK: - Layouts
+
+    func promptSaveLayout() {
+        let alert = NSAlert()
+        alert.messageText = "Save Layout"
+        alert.informativeText = "Name this layout. It saves every open tab, its folder, color and start command."
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 280, height: 24))
+        field.placeholderString = "e.g. Work"
+        alert.accessoryView = field
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Cancel")
+        alert.window.initialFirstResponder = field
+        if alert.runModal() == .alertFirstButtonReturn {
+            let name = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !name.isEmpty { saveLayout(name: name) }
+        }
+    }
+
+    func saveLayout(name: String) {
+        let saved = tabs.map { tab in
+            SavedTab(title: tab.title, colorHex: tab.colorHex, folder: tab.cwd, startCommand: tab.startCommand)
+        }
+        AppModel.shared.addLayout(SavedLayout(name: name, tabs: saved))
+    }
+
+    func restore(layout: SavedLayout) {
+        for tab in layout.tabs {
+            newTab(folder: tab.folder, title: tab.title, colorHex: tab.colorHex,
+                   startCommand: tab.startCommand, select: false)
+        }
+        if tabs.isEmpty {
+            newTab(folder: homeDirectory, title: nil, colorHex: nil, startCommand: nil)
+        } else {
+            selectTab(id: tabs[0].id)
+        }
+    }
+
+    // MARK: - Start commands
+
+    func promptSetStartCommand(for session: TerminalSession) {
+        let alert = NSAlert()
+        alert.messageText = "Start Command"
+        alert.informativeText = "The tab opens this folder and runs this command once the shell is ready."
+
+        let folderField = NSTextField(frame: NSRect(x: 0, y: 0, width: 320, height: 24))
+        folderField.stringValue = session.folder
+        folderField.placeholderString = "Folder"
+        let commandField = NSTextField(frame: NSRect(x: 0, y: 0, width: 320, height: 24))
+        commandField.stringValue = session.startCommand ?? ""
+        commandField.placeholderString = "Command (e.g. grok)"
+        let stack = NSStackView(views: [folderField, commandField])
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 8
+        stack.setHuggingPriority(.defaultLow, for: .horizontal)
+        alert.accessoryView = stack
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Cancel")
+        alert.window.initialFirstResponder = commandField
+        if alert.runModal() == .alertFirstButtonReturn {
+            let folder = folderField.stringValue.trimmingCharacters(in: .whitespaces)
+            let command = commandField.stringValue.trimmingCharacters(in: .whitespaces)
+            if !folder.isEmpty { session.folder = folder }
+            session.startCommand = command.isEmpty ? nil : command
+        }
+    }
+
+    func runStartCommand(for session: TerminalSession) {
+        if let cmd = session.startCommand, !cmd.isEmpty {
+            session.terminalView.send(txt: cmd + "\r")
+        }
+    }
+
+    // MARK: - Find
+
+    private var searchOptions: SearchOptions {
+        SearchOptions(caseSensitive: findCaseSensitive, regex: false, wholeWord: false)
+    }
+
+    func showFind() {
+        if findVisible {
+            findFocusRequest += 1
+        } else {
+            findVisible = true
+            findFocusRequest += 1
+        }
+        updateFindSummary()
+    }
+
+    func closeFind() {
+        findVisible = false
+        selectedSession?.terminalView.clearSearch()
+        findText = ""
+        findMatchIndex = 0
+        findMatchTotal = 0
+        focusTerminal()
+    }
+
+    func onFindTextChanged() {
+        guard let view = selectedSession?.terminalView else { return }
+        if findText.isEmpty {
+            view.clearSearch()
+            findMatchIndex = 0
+            findMatchTotal = 0
+            return
+        }
+        _ = view.findNext(findText, options: searchOptions)
+        updateFindSummary()
+    }
+
+    func findNext() {
+        guard let view = selectedSession?.terminalView, !findText.isEmpty else { return }
+        _ = view.findNext(findText, options: searchOptions)
+        updateFindSummary()
+    }
+
+    func findPrevious() {
+        guard let view = selectedSession?.terminalView, !findText.isEmpty else { return }
+        _ = view.findPrevious(findText, options: searchOptions)
+        updateFindSummary()
+    }
+
+    func updateFindSummary() {
+        guard let view = selectedSession?.terminalView, !findText.isEmpty else {
+            findMatchIndex = 0
+            findMatchTotal = 0
+            return
+        }
+        let (index, total) = view.searchMatchSummary(findText, options: searchOptions)
+        findMatchIndex = index
+        findMatchTotal = total
+    }
+
+    // MARK: - Actions
+
+    func copyLastOutput() {
+        selectedSession?.copyLastBlock()
+    }
+
+    func focusTerminal() {
+        guard let view = selectedSession?.terminalView, let win = view.window else { return }
+        win.makeFirstResponder(view)
+    }
+
+    // MARK: - Appearance
+
+    func applyAppearanceToAll() {
+        tabs.forEach { $0.applyAppearance() }
+    }
+
+    // MARK: - Window state
+
+    func attachWindow(_ newWindow: NSWindow?) {
+        guard window !== newWindow else { return }
+        window = newWindow
+        if let newWindow {
+            isKeyWindow = newWindow.isKeyWindow
+            WindowRegistry.register(window: newWindow, model: self)
+        }
+    }
+
+    private func observeNotifications() {
+        let nc = NotificationCenter.default
+        observers.append(nc.addObserver(forName: NSWindow.didBecomeKeyNotification, object: nil, queue: .main) { [weak self] note in
+            guard let w = note.object as? NSWindow, w === self?.window else { return }
+            self?.isKeyWindow = true
+        })
+        observers.append(nc.addObserver(forName: NSWindow.didResignKeyNotification, object: nil, queue: .main) { [weak self] note in
+            guard let w = note.object as? NSWindow, w === self?.window else { return }
+            self?.isKeyWindow = false
+        })
+        appSettingsObserver = nc.addObserver(forName: .glowSettingsChanged, object: nil, queue: .main) { [weak self] _ in
+            self?.applyAppearanceToAll()
+        }
+    }
+
+    private func startAttentionTimer() {
+        attentionTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
+            self?.checkAttention()
+        }
+    }
+
+    private func checkAttention() {
+        guard AppModel.shared.settings.notifyOnCommandDone else { return }
+        let appInactive = !NSApp.isActive
+        for session in tabs {
+            session.tickAttention(appInactive: appInactive, windowUnfocused: !isKeyWindow)
+        }
+    }
+}
+
+/// Weak window → WindowModel map so AppKit-side code (e.g. the Cmd+W
+/// interception in the app delegate) can reach the focused window's model.
+enum WindowRegistry {
+    static let table = NSMapTable<NSWindow, WindowModel>(keyOptions: .weakMemory, valueOptions: .weakMemory)
+
+    static func register(window: NSWindow, model: WindowModel) {
+        table.setObject(model, forKey: window)
+    }
+
+    static func model(for window: NSWindow) -> WindowModel? {
+        table.object(forKey: window)
+    }
+}
