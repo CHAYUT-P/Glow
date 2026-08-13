@@ -34,6 +34,9 @@ final class GlowTerminalView: LocalProcessTerminalView {
         notifyUpdateChanges = true
         scrollerStyle = .overlay
         optionAsMetaKey = true
+        // Glow draws its own accent focus border around the active pane, so
+        // suppress the system's blue focus ring (drawn outside the view).
+        focusRingType = .none
     }
 
     override func send(source: TerminalView, data: ArraySlice<UInt8>) {
