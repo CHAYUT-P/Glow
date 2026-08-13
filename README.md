@@ -95,3 +95,4 @@ Sources/Glow/
   Views/                   ContentView, TabBarView, FolderSidebarView, FindBarView, SettingsView
   Support/                 GlobalHotkey (Carbon), FolderDrop, color helpers
 ```
+# Glow
