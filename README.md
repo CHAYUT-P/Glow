@@ -24,10 +24,16 @@ swift build
 ## What's inside
 
 - **One window per session**, tabs on top, folder sidebar on the left.
-- **Tabs**: name them, color them, reorder by drag, close with the × or
-  `Cmd+W`. Shortcuts: `Cmd+T` new tab, `Cmd+1`…`Cmd+9` select tab,
+- **Tabs**: name them, color them, reorder by drag, close with the × (whole
+  tab) or `Cmd+W` (focused pane, or the whole tab when it has one pane).
+  Shortcuts: `Cmd+T` new tab, `Cmd+1`…`Cmd+9` select tab,
   `Cmd+Shift+[` / `Cmd+Shift+]` previous / next tab, `Cmd+Shift+T` reopen
   the last closed tab. Each tab has its own shell in its own folder.
+- **Split panes**: several terminals inside one tab. `Cmd+D` split right,
+  `Cmd+Shift+D` split down, `Cmd+Option+Arrow` move focus between panes,
+  `Cmd+W` close the focused pane. The active pane gets a subtle accent
+  border; click any pane to focus it. Split/close also live in the tab's
+  right-click menu and the **Panes** menu.
 - **Folders**: sidebar shows Home + recent folders. `Open…` (`Cmd+O`)
   uses a folder picker. Double-click a folder, or drag one from Finder onto
   the sidebar, the tab bar, or the terminal — a new tab starts there. No
@@ -64,6 +70,8 @@ layouts, and settings. That's the only file Glow writes.
 - Tab working directory is tracked from the shell's OSC 7 announcement
   when present; otherwise it's the folder the tab was started in. Layouts
   save the last known directory.
+- Layouts save one tab per open tab (the focused pane's folder and start
+  command); split-pane arrangements are not persisted yet.
 - "Copy last output" is the simple last-prompt-to-end heuristic, not a
   full block engine.
 - If you close the window entirely, the `Ctrl+`` hotkey re-activates Glow

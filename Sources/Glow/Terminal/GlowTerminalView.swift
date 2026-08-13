@@ -13,6 +13,7 @@ import SwiftTerm
 final class GlowTerminalView: LocalProcessTerminalView {
     var onCommandSubmit: (() -> Void)?
     var onActivity: (() -> Void)?
+    var onFocus: (() -> Void)?
 
     override init(frame: CGRect, font: NSFont? = nil, options: TerminalOptions) {
         super.init(frame: frame, font: font, options: options)
@@ -46,5 +47,10 @@ final class GlowTerminalView: LocalProcessTerminalView {
         DispatchQueue.main.async { [weak self] in
             self?.onActivity?()
         }
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        super.mouseDown(with: event)
+        onFocus?()
     }
 }

@@ -37,9 +37,6 @@ struct GlowCommands: Commands {
         }
         CommandGroup(after: .newItem) {
             Divider()
-            Button("Close Tab") { windowModel?.closeSelectedTab() }
-                .keyboardShortcut("w", modifiers: .command)
-            Divider()
             Button("Save Layout…") { windowModel?.promptSaveLayout() }
                 .keyboardShortcut("s", modifiers: [.command, .shift])
         }
@@ -50,6 +47,24 @@ struct GlowCommands: Commands {
             if appModel.layouts.isEmpty {
                 Text("No saved layouts")
             }
+        }
+        CommandMenu("Panes") {
+            Button("Split Right") { windowModel?.splitSelectedPane(axis: .horizontal) }
+                .keyboardShortcut("d", modifiers: .command)
+            Button("Split Down") { windowModel?.splitSelectedPane(axis: .vertical) }
+                .keyboardShortcut("d", modifiers: [.command, .shift])
+            Divider()
+            Button("Focus Pane Left") { windowModel?.focusPane(direction: .left) }
+                .keyboardShortcut(.leftArrow, modifiers: [.command, .option])
+            Button("Focus Pane Right") { windowModel?.focusPane(direction: .right) }
+                .keyboardShortcut(.rightArrow, modifiers: [.command, .option])
+            Button("Focus Pane Up") { windowModel?.focusPane(direction: .up) }
+                .keyboardShortcut(.upArrow, modifiers: [.command, .option])
+            Button("Focus Pane Down") { windowModel?.focusPane(direction: .down) }
+                .keyboardShortcut(.downArrow, modifiers: [.command, .option])
+            Divider()
+            Button("Close Pane") { windowModel?.closeFocusedPaneOrTab() }
+                .keyboardShortcut("w", modifiers: .command)
         }
         CommandMenu("View") {
             Button("Toggle Sidebar") { windowModel?.sidebarVisible.toggle() }
@@ -148,7 +163,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let keyWindow = NSApp.keyWindow,
               !(keyWindow is NSPanel),
               let model = WindowRegistry.model(for: keyWindow) else { return false }
-        model.closeSelectedTab()
+        model.closeFocusedPaneOrTab()
         return true
     }
 

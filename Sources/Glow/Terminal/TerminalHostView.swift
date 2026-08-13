@@ -3,20 +3,22 @@ import SwiftTerm
 import SwiftUI
 
 /// Bridges one TerminalSession's SwiftTerm view into SwiftUI. All sessions stay
-/// mounted (so their PTYs keep running); inactive ones are hidden so they are
-/// not drawn, which keeps idle CPU near zero.
+/// mounted (so their PTYs keep running); sessions in non-selected tabs are
+/// hidden so they are not drawn, which keeps idle CPU near zero.
 ///
-/// Work happens only when the active state actually changes (a tab switch), so
-/// unrelated model updates stay cheap and switching is immediate.
+/// Work happens only when visibility or focus actually changes, so unrelated
+/// model updates stay cheap and pane/tab switching is immediate.
 struct TerminalHostView: NSViewRepresentable {
     let session: TerminalSession
-    let isActive: Bool
+    let isVisible: Bool
+    let isFocused: Bool
     let suppressFocus: Bool
 
     @EnvironmentObject var windowModel: WindowModel
 
     final class Coordinator {
-        var wasActive = false
+        var wasVisible = false
+        var wasFocused = false
     }
 
     func makeCoordinator() -> Coordinator { Coordinator() }
@@ -28,19 +30,21 @@ struct TerminalHostView: NSViewRepresentable {
     func updateNSView(_ nsView: TerminalView, context: Context) {
         windowModel.attachWindow(nsView.window)
         let coordinator = context.coordinator
-        let activeChanged = isActive != coordinator.wasActive
-        coordinator.wasActive = isActive
+        let visibleChanged = isVisible != coordinator.wasVisible
+        let focusedChanged = isFocused != coordinator.wasFocused
+        coordinator.wasVisible = isVisible
+        coordinator.wasFocused = isFocused
 
-        guard activeChanged else { return }
+        guard visibleChanged || focusedChanged else { return }
 
-        nsView.isHidden = !isActive
-        if isActive {
+        nsView.isHidden = !isVisible
+        if isVisible, visibleChanged {
             // Force a clean full redraw now that the view is visible again.
             session.terminalView.terminal.updateFullScreen()
             nsView.needsDisplay = true
-            if !suppressFocus {
-                focus(nsView)
-            }
+        }
+        if isFocused, focusedChanged, !suppressFocus {
+            focus(nsView)
         }
     }
 

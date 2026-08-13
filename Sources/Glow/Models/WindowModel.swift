@@ -10,10 +10,11 @@ enum GlowWindowRequest: Hashable, Codable {
     case layout(SavedLayout)
 }
 
-/// Per-window state: the tabs, selection, sidebar/find UI state, and the
-/// attention timer that watches background output.
+/// Per-window state: the tabs (each a tree of split panes), selection,
+/// sidebar/find UI state, and the attention timer that watches background
+/// output.
 final class WindowModel: ObservableObject {
-    @Published var tabs: [TerminalSession] = []
+    @Published var tabs: [Tab] = []
     @Published var selectedTabID: UUID?
     @Published var sidebarVisible = true
     @Published var selectedFolder: String?
@@ -33,9 +34,13 @@ final class WindowModel: ObservableObject {
     private var observers: [NSObjectProtocol] = []
     private var appSettingsObserver: NSObjectProtocol?
 
-    var selectedSession: TerminalSession? {
+    var selectedTab: Tab? {
         guard let id = selectedTabID else { return nil }
         return tabs.first { $0.id == id }
+    }
+
+    var selectedSession: TerminalSession? {
+        selectedTab?.focusedSession
     }
 
     private var homeDirectory: String {
@@ -61,26 +66,48 @@ final class WindowModel: ObservableObject {
         attentionTimer?.invalidate()
         observers.forEach { NotificationCenter.default.removeObserver($0) }
         if let appSettingsObserver { NotificationCenter.default.removeObserver(appSettingsObserver) }
-        tabs.forEach { $0.close() }
+        for tab in tabs {
+            for session in tab.allSessions {
+                session.close()
+            }
+        }
+    }
+
+    // MARK: - Sessions
+
+    private func makeSession(folder: String, title: String?, colorHex: String?, startCommand: String?) -> TerminalSession {
+        let session = TerminalSession(folder: folder, title: title, colorHex: colorHex, startCommand: startCommand)
+        session.terminalView.onFocus = { [weak self, weak session] in
+            guard let self, let id = session?.id else { return }
+            self.focusPane(sessionID: id)
+        }
+        return session
     }
 
     // MARK: - Tabs
 
+    @discardableResult
     func newTab(folder: String? = nil, title: String? = nil, colorHex: String? = nil,
-                startCommand: String? = nil, select: Bool = true) {
+                startCommand: String? = nil, select: Bool = true) -> Tab {
         let dir = folder ?? selectedFolder ?? selectedSession?.cwd ?? homeDirectory
-        let session = TerminalSession(folder: dir, title: title, colorHex: colorHex, startCommand: startCommand)
-        tabs.append(session)
+        let session = makeSession(folder: dir, title: title, colorHex: colorHex, startCommand: startCommand)
+        let tab = Tab(session: session)
+        tabs.append(tab)
         if select {
-            selectTab(id: session.id)
+            selectTab(id: tab.id)
         }
+        return tab
     }
 
     func selectTab(id: UUID) {
         selectedTabID = id
-        if let session = tabs.first(where: { $0.id == id }) {
-            session.attention = false
-            selectedFolder = session.cwd
+        if let tab = tabs.first(where: { $0.id == id }) {
+            for session in tab.allSessions {
+                session.attention = false
+            }
+            if let focused = tab.focusedSession {
+                selectedFolder = focused.cwd
+            }
         }
     }
 
@@ -116,14 +143,19 @@ final class WindowModel: ObservableObject {
 
     func closeTab(id: UUID) {
         guard let index = tabs.firstIndex(where: { $0.id == id }) else { return }
-        let session = tabs[index]
+        let tab = tabs[index]
+        let focused = tab.focusedSession
         closedTabs.append(ClosedTabSnapshot(
-            folder: session.folder, title: session.title,
-            colorHex: session.colorHex, startCommand: session.startCommand
+            folder: focused?.folder ?? homeDirectory,
+            title: focused?.title ?? "",
+            colorHex: focused?.colorHex ?? "",
+            startCommand: focused?.startCommand
         ))
         if closedTabs.count > 10 { closedTabs.removeFirst(closedTabs.count - 10) }
         tabs.remove(at: index)
-        session.close()
+        for session in tab.allSessions {
+            session.close()
+        }
         if selectedTabID == id {
             selectedTabID = tabs.last?.id
         }
@@ -142,11 +174,43 @@ final class WindowModel: ObservableObject {
         if let id = selectedTabID { closeTab(id: id) }
     }
 
+    /// ⌘W: close the focused pane when the tab has several panes; otherwise
+    /// close the whole tab.
+    func closeFocusedPaneOrTab() {
+        guard let tab = selectedTab else { return }
+        if tab.paneCount > 1 {
+            tab.closeFocusedPane()
+        } else {
+            closeSelectedTab()
+        }
+    }
+
     func moveTab(from sourceID: UUID, to targetID: UUID) {
         guard let from = tabs.firstIndex(where: { $0.id == sourceID }),
               let to = tabs.firstIndex(where: { $0.id == targetID }), from != to else { return }
-        let session = tabs.remove(at: from)
-        tabs.insert(session, at: to)
+        let tab = tabs.remove(at: from)
+        tabs.insert(tab, at: to)
+    }
+
+    // MARK: - Panes
+
+    func splitSelectedPane(axis: PaneAxis) {
+        guard let tab = selectedTab, let focused = tab.focusedSession else { return }
+        let newSession = makeSession(folder: focused.cwd, title: nil, colorHex: focused.colorHex, startCommand: nil)
+        tab.split(focusedSessionID: focused.id, axis: axis, newSession: newSession)
+    }
+
+    func focusPane(sessionID: UUID) {
+        guard let tab = selectedTab else { return }
+        tab.focus(sessionID: sessionID)
+        guard let session = tab.focusedSession, let win = session.terminalView.window else { return }
+        if win.firstResponder !== session.terminalView {
+            win.makeFirstResponder(session.terminalView)
+        }
+    }
+
+    func focusPane(direction: PaneDirection) {
+        selectedTab?.focus(direction: direction)
     }
 
     // MARK: - Folders
@@ -188,8 +252,11 @@ final class WindowModel: ObservableObject {
     }
 
     func saveLayout(name: String) {
-        let saved = tabs.map { tab in
-            SavedTab(title: tab.title, colorHex: tab.colorHex, folder: tab.cwd, startCommand: tab.startCommand)
+        let saved = tabs.compactMap { tab in
+            tab.focusedSession.map { session in
+                SavedTab(title: session.title, colorHex: session.colorHex,
+                         folder: session.cwd, startCommand: session.startCommand)
+            }
         }
         AppModel.shared.addLayout(SavedLayout(name: name, tabs: saved))
     }
@@ -316,7 +383,11 @@ final class WindowModel: ObservableObject {
     // MARK: - Appearance
 
     func applyAppearanceToAll() {
-        tabs.forEach { $0.applyAppearance() }
+        for tab in tabs {
+            for session in tab.allSessions {
+                session.applyAppearance()
+            }
+        }
     }
 
     // MARK: - Window state
@@ -359,8 +430,10 @@ final class WindowModel: ObservableObject {
     private func checkAttention() {
         guard AppModel.shared.settings.notifyOnCommandDone else { return }
         let appInactive = !NSApp.isActive
-        for session in tabs {
-            session.tickAttention(appInactive: appInactive, windowUnfocused: !isKeyWindow)
+        for tab in tabs {
+            for session in tab.allSessions {
+                session.tickAttention(appInactive: appInactive, windowUnfocused: !isKeyWindow)
+            }
         }
     }
 }

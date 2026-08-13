@@ -7,8 +7,8 @@ struct TabBarView: View {
 
     var body: some View {
         HStack(spacing: 4) {
-            ForEach(model.tabs) { session in
-                TabItemView(session: session, model: model)
+            ForEach(model.tabs) { tab in
+                TabItemView(tab: tab, model: model)
             }
             Button {
                 model.newTab()
@@ -46,16 +46,16 @@ struct TabBarView: View {
 }
 
 private struct TabItemView: View {
-    @ObservedObject var session: TerminalSession
+    @ObservedObject var tab: Tab
     @ObservedObject var model: WindowModel
     @State private var editing = false
     @State private var editingTitle = ""
 
-    private var isSelected: Bool { session.id == model.selectedTabID }
+    private var isSelected: Bool { tab.id == model.selectedTabID }
 
     var body: some View {
         HStack(spacing: 5) {
-            if let color = Color(hex: session.colorHex) {
+            if let color = Color(hex: tab.colorHex) {
                 Circle().fill(color).frame(width: 8, height: 8)
             }
             if editing {
@@ -65,17 +65,17 @@ private struct TabItemView: View {
                     .frame(width: 110)
                     .onSubmit { commitRename() }
             } else {
-                Text(session.title)
+                Text(tab.title)
                     .font(.system(size: 12, weight: .medium))
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .frame(maxWidth: 130)
             }
-            if session.attention {
+            if tab.attention {
                 Circle().fill(Color.orange).frame(width: 6, height: 6)
             }
             Button {
-                model.closeTab(id: session.id)
+                model.closeTab(id: tab.id)
             } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 8, weight: .bold))
@@ -92,43 +92,59 @@ private struct TabItemView: View {
                 .fill(isSelected ? Color.accentColor.opacity(0.22) : Color.clear)
         )
         .contentShape(Rectangle())
-        .onTapGesture { model.selectTab(id: session.id) }
+        .onTapGesture { model.selectTab(id: tab.id) }
         .contextMenu { tabContextMenu }
-        .onDrag { NSItemProvider(object: session.id.uuidString as NSString) }
-        .onDrop(of: [UTType.text], delegate: TabDropDelegate(sourceID: session.id, model: model))
+        .onDrag { NSItemProvider(object: tab.id.uuidString as NSString) }
+        .onDrop(of: [UTType.text], delegate: TabDropDelegate(sourceID: tab.id, model: model))
     }
 
     private var tabContextMenu: some View {
         VStack {
             Button("Rename…") { beginRename() }
-            Button("Reset Title") { session.resetTitle() }
+            Button("Reset Title") { tab.focusedSession?.resetTitle() }
             Menu("Tab Color") {
-                Button("None") { session.colorHex = "" }
+                Button("None") { tab.focusedSession?.colorHex = "" }
                 ForEach(GlowTheme.tabColors, id: \.hex) { item in
-                    Button(item.name) { session.colorHex = item.hex }
+                    Button(item.name) { tab.focusedSession?.colorHex = item.hex }
                 }
             }
             Divider()
-            Button("Set Start Command…") { model.promptSetStartCommand(for: session) }
-            Button("Run Start Command") { model.runStartCommand(for: session) }
+            Button("Split Right") {
+                model.selectTab(id: tab.id)
+                model.splitSelectedPane(axis: .horizontal)
+            }
+            Button("Split Down") {
+                model.selectTab(id: tab.id)
+                model.splitSelectedPane(axis: .vertical)
+            }
+            Button("Close Pane") {
+                model.selectTab(id: tab.id)
+                model.closeFocusedPaneOrTab()
+            }
+            .disabled(tab.paneCount <= 1)
             Divider()
-            Button("Restart Session") { session.restart() }
-                .disabled(session.isRunning)
+            if let session = tab.focusedSession {
+                Button("Set Start Command…") { model.promptSetStartCommand(for: session) }
+                Button("Run Start Command") { model.runStartCommand(for: session) }
+            }
             Divider()
-            Button("Copy Last Output") { session.copyLastBlock() }
+            Button("Restart Session") { tab.focusedSession?.restart() }
+                .disabled(tab.focusedSession?.isRunning ?? true)
             Divider()
-            Button("Close Tab") { model.closeTab(id: session.id) }
+            Button("Copy Last Output") { tab.focusedSession?.copyLastBlock() }
+            Divider()
+            Button("Close Tab") { model.closeTab(id: tab.id) }
         }
     }
 
     private func beginRename() {
-        editingTitle = session.title
+        editingTitle = tab.title
         editing = true
     }
 
     private func commitRename() {
         editing = false
-        session.setCustomTitle(editingTitle)
+        tab.focusedSession?.setCustomTitle(editingTitle)
     }
 }
 
