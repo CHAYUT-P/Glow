@@ -54,7 +54,6 @@ struct TabBarView: View {
 private struct TabItemView: View {
     @ObservedObject var tab: Tab
     @ObservedObject var model: WindowModel
-    @ObservedObject private var appModel = AppModel.shared
     @State private var editing = false
     @State private var editingTitle = ""
     @State private var hovering = false
@@ -110,10 +109,10 @@ private struct TabItemView: View {
 
     private var tabBackground: Color {
         if isSelected {
-            return Color(nsColor: appModel.theme.accent).opacity(0.16)
+            return Color.primary.opacity(0.12)
         }
         if hovering {
-            return Color.primary.opacity(0.06)
+            return Color.primary.opacity(0.05)
         }
         return Color.clear
     }

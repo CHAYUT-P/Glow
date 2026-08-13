@@ -62,29 +62,35 @@ private struct PaneNodeView: View {
     let pane: Pane
 
     @State private var dropZone: DropZone?
+    @State private var paneSize: CGSize = .zero
 
     private var isSelectedTab: Bool { tab.id == model.selectedTabID }
 
     var body: some View {
         Group {
             if let session = pane.session {
-                GeometryReader { geo in
-                    TerminalHostView(
-                        session: session,
-                        isVisible: isSelectedTab,
-                        isFocused: isSelectedTab && session.id == tab.focusedSessionID,
-                        suppressFocus: model.findVisible
-                    )
-                    .overlay(focusBorder(for: session).allowsHitTesting(false))
-                    .overlay(dropZoneOverlay(size: geo.size))
-                    .onDrop(of: [UTType.text], delegate: PaneDropDelegate(
-                        model: model,
-                        targetTab: tab,
-                        paneSession: session,
-                        size: geo.size,
-                        onZone: { zone in dropZone = zone }
-                    ))
-                }
+                TerminalHostView(
+                    session: session,
+                    isVisible: isSelectedTab,
+                    isFocused: isSelectedTab && session.id == tab.focusedSessionID,
+                    suppressFocus: model.findVisible
+                )
+                .overlay(focusBorder(for: session).allowsHitTesting(false))
+                .overlay(dropZoneOverlay)
+                .background(
+                    GeometryReader { geo in
+                        Color.clear
+                            .onAppear { paneSize = geo.size }
+                            .onChange(of: geo.size) { paneSize = $0 }
+                    }
+                )
+                .onDrop(of: [UTType.text], delegate: PaneDropDelegate(
+                    model: model,
+                    targetTab: tab,
+                    paneSession: session,
+                    size: paneSize,
+                    onZone: { zone in dropZone = zone }
+                ))
             } else if let axis = pane.axis, let children = pane.children, children.count == 2 {
                 if axis == .horizontal {
                     HStack(spacing: 6) {
@@ -110,9 +116,9 @@ private struct PaneNodeView: View {
     }
 
     @ViewBuilder
-    private func dropZoneOverlay(size: CGSize) -> some View {
-        if let zone = dropZone, size.width > 0, size.height > 0 {
-            let rect = zone.rect(in: size)
+    private var dropZoneOverlay: some View {
+        if let zone = dropZone, paneSize.width > 0, paneSize.height > 0 {
+            let rect = zone.rect(in: paneSize)
             Rectangle()
                 .fill(Color.accentColor.opacity(0.25))
                 .frame(width: rect.width, height: rect.height)
