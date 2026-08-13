@@ -197,7 +197,55 @@ final class WindowModel: ObservableObject {
     func splitSelectedPane(axis: PaneAxis) {
         guard let tab = selectedTab, let focused = tab.focusedSession else { return }
         let newSession = makeSession(folder: focused.cwd, title: nil, colorHex: focused.colorHex, startCommand: nil)
-        tab.split(focusedSessionID: focused.id, axis: axis, newSession: newSession)
+        tab.split(paneSessionID: focused.id, axis: axis, newSession: newSession, placingFirst: false)
+    }
+
+    /// Splits the pane under a drop with a fresh session (dragging a tab onto
+    /// its own terminal). Direction decides which side the new pane lands on.
+    func splitPane(inTab tabID: UUID, paneSessionID: UUID, direction: PaneDirection) {
+        guard let tab = tabs.first(where: { $0.id == tabID }),
+              let paneSession = tab.session(withID: paneSessionID) else { return }
+        let (axis, placingFirst) = splitPlacement(for: direction)
+        let newSession = makeSession(folder: paneSession.cwd, title: nil,
+                                     colorHex: paneSession.colorHex, startCommand: nil)
+        tab.split(paneSessionID: paneSessionID, axis: axis, newSession: newSession, placingFirst: placingFirst)
+        selectTab(id: tab.id)
+    }
+
+    /// Moves a session from one tab into a split of another tab's pane
+    /// (dragging a tab onto a terminal in a different tab).
+    func moveSession(sessionID: UUID, fromTab sourceTabID: UUID, ontoTab targetTabID: UUID,
+                     paneSessionID: UUID, direction: PaneDirection) {
+        guard sourceTabID != targetTabID,
+              let sourceTab = tabs.first(where: { $0.id == sourceTabID }),
+              let targetTab = tabs.first(where: { $0.id == targetTabID }),
+              let session = sourceTab.session(withID: sessionID),
+              targetTab.session(withID: paneSessionID) != nil else { return }
+
+        let (axis, placingFirst) = splitPlacement(for: direction)
+        targetTab.split(paneSessionID: paneSessionID, axis: axis, newSession: session, placingFirst: placingFirst)
+
+        if !sourceTab.detach(sessionID: session.id) {
+            removeEmptyTab(sourceTabID)
+        }
+        selectTab(id: targetTabID)
+    }
+
+    private func splitPlacement(for direction: PaneDirection) -> (PaneAxis, Bool) {
+        switch direction {
+        case .left: return (.horizontal, true)
+        case .right: return (.horizontal, false)
+        case .up: return (.vertical, true)
+        case .down: return (.vertical, false)
+        }
+    }
+
+    private func removeEmptyTab(_ id: UUID) {
+        guard let index = tabs.firstIndex(where: { $0.id == id }) else { return }
+        tabs.remove(at: index)
+        if tabs.isEmpty {
+            newTab(folder: homeDirectory, title: nil, colorHex: nil, startCommand: nil)
+        }
     }
 
     func focusPane(sessionID: UUID) {

@@ -34,6 +34,11 @@ swift build
   `Cmd+W` close the focused pane. The active pane gets a subtle accent
   border; click any pane to focus it. Split/close also live in the tab's
   right-click menu and the **Panes** menu.
+- **Drag a tab to split**: grab a tab and drag it down onto the terminal.
+  Dropping on your own tab's terminal splits it with a fresh shell; dropping
+  on another tab's terminal moves that tab's shell into a split there. The
+  highlighted half (left / right / top / bottom edge) shows where the new
+  pane lands, and the drop zone indicator follows your cursor while dragging.
 - **Folders**: sidebar shows Home + recent folders. `Open…` (`Cmd+O`)
   uses a folder picker. Double-click a folder, or drag one from Finder onto
   the sidebar, the tab bar, or the terminal — a new tab starts there. No

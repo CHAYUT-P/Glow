@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct ContentView: View {
     @StateObject private var model: WindowModel
@@ -59,18 +60,30 @@ private struct PaneNodeView: View {
     @ObservedObject var model: WindowModel
     let pane: Pane
 
+    @State private var dropZone: DropZone?
+
     private var isSelectedTab: Bool { tab.id == model.selectedTabID }
 
     var body: some View {
         Group {
             if let session = pane.session {
-                TerminalHostView(
-                    session: session,
-                    isVisible: isSelectedTab,
-                    isFocused: isSelectedTab && session.id == tab.focusedSessionID,
-                    suppressFocus: model.findVisible
-                )
-                .overlay(focusBorder(for: session).allowsHitTesting(false))
+                GeometryReader { geo in
+                    TerminalHostView(
+                        session: session,
+                        isVisible: isSelectedTab,
+                        isFocused: isSelectedTab && session.id == tab.focusedSessionID,
+                        suppressFocus: model.findVisible
+                    )
+                    .overlay(focusBorder(for: session).allowsHitTesting(false))
+                    .overlay(dropZoneOverlay(size: geo.size))
+                    .onDrop(of: [UTType.text], delegate: PaneDropDelegate(
+                        model: model,
+                        targetTab: tab,
+                        paneSession: session,
+                        size: geo.size,
+                        onZone: { zone in dropZone = zone }
+                    ))
+                }
             } else if let axis = pane.axis, let children = pane.children, children.count == 2 {
                 if axis == .horizontal {
                     HStack(spacing: 0) {
@@ -93,5 +106,107 @@ private struct PaneNodeView: View {
         let isFocused = isSelectedTab && session.id == tab.focusedSessionID
         return RoundedRectangle(cornerRadius: 5, style: .continuous)
             .stroke(Color.accentColor.opacity(isFocused ? 0.6 : 0), lineWidth: 1.5)
+    }
+
+    @ViewBuilder
+    private func dropZoneOverlay(size: CGSize) -> some View {
+        if let zone = dropZone, size.width > 0, size.height > 0 {
+            let rect = zone.rect(in: size)
+            Rectangle()
+                .fill(Color.accentColor.opacity(0.25))
+                .frame(width: rect.width, height: rect.height)
+                .position(x: rect.midX, y: rect.midY)
+                .allowsHitTesting(false)
+        }
+    }
+}
+
+/// Which half of a pane a drop is over, deciding how the split lands.
+private enum DropZone {
+    case left, right, top, bottom
+
+    func rect(in size: CGSize) -> CGRect {
+        switch self {
+        case .left: return CGRect(x: 0, y: 0, width: size.width / 2, height: size.height)
+        case .right: return CGRect(x: size.width / 2, y: 0, width: size.width / 2, height: size.height)
+        case .top: return CGRect(x: 0, y: 0, width: size.width, height: size.height / 2)
+        case .bottom: return CGRect(x: 0, y: size.height / 2, width: size.width, height: size.height / 2)
+        }
+    }
+}
+
+/// Handles dropping a tab (dragged from the tab bar) onto a terminal pane.
+/// Dragging onto your own tab's terminal splits it with a fresh session;
+/// dragging onto another tab's terminal moves that session into a split.
+private struct PaneDropDelegate: DropDelegate {
+    let model: WindowModel
+    let targetTab: Tab
+    let paneSession: TerminalSession
+    let size: CGSize
+    let onZone: (DropZone?) -> Void
+
+    func dropEntered(info: DropInfo) {
+        onZone(zone(for: info))
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        onZone(zone(for: info))
+        return DropProposal(operation: .copy)
+    }
+
+    func dropExited(info: DropInfo) {
+        onZone(nil)
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        onZone(nil)
+        guard let provider = info.itemProviders(for: [.text]).first else { return false }
+        provider.loadItem(forTypeIdentifier: UTType.text.identifier, options: nil) { item, _ in
+            var idString: String?
+            if let data = item as? Data {
+                idString = String(data: data, encoding: .utf8)
+            } else if let string = item as? String {
+                idString = string
+            }
+            guard let idString, let sourceTabID = UUID(uuidString: idString) else { return }
+            DispatchQueue.main.async {
+                let direction = self.direction(for: info)
+                if sourceTabID == self.targetTab.id {
+                    self.model.splitPane(inTab: self.targetTab.id,
+                                         paneSessionID: self.paneSession.id,
+                                         direction: direction)
+                } else {
+                    guard let sourceTab = self.model.tabs.first(where: { $0.id == sourceTabID }),
+                          let session = sourceTab.focusedSession else { return }
+                    self.model.moveSession(sessionID: session.id,
+                                           fromTab: sourceTabID,
+                                           ontoTab: self.targetTab.id,
+                                           paneSessionID: self.paneSession.id,
+                                           direction: direction)
+                }
+            }
+        }
+        return true
+    }
+
+    private func zone(for info: DropInfo) -> DropZone? {
+        guard size.width > 0, size.height > 0 else { return nil }
+        let rx = info.location.x / size.width
+        let ry = info.location.y / size.height
+        if rx < 0.3 { return .left }
+        if rx > 0.7 { return .right }
+        if ry < 0.3 { return .top }
+        if ry > 0.7 { return .bottom }
+        return .right
+    }
+
+    private func direction(for info: DropInfo) -> PaneDirection {
+        switch zone(for: info) {
+        case .left: return .left
+        case .right: return .right
+        case .top: return .up
+        case .bottom: return .down
+        case nil: return .right
+        }
     }
 }

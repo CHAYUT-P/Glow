@@ -58,6 +58,10 @@ final class Tab: ObservableObject, Identifiable {
         allSessions.first { $0.id == focusedSessionID }
     }
 
+    func session(withID id: UUID) -> TerminalSession? {
+        allSessions.first { $0.id == id }
+    }
+
     var title: String { focusedSession?.title ?? "terminal" }
     var colorHex: String { focusedSession?.colorHex ?? "" }
     var attention: Bool { allSessions.contains { $0.attention } }
@@ -107,14 +111,16 @@ final class Tab: ObservableObject, Identifiable {
 
     // MARK: - Pane mutations
 
-    /// Replaces the focused leaf with a split containing the old leaf and a
-    /// new pane holding `newSession`, then focuses the new pane.
-    func split(focusedSessionID: UUID, axis: PaneAxis, newSession: TerminalSession) {
-        guard let leaf = pane(containing: focusedSessionID) else { return }
+    /// Replaces the pane holding `paneSessionID` with a split containing that
+    /// pane and a new pane holding `newSession`, then focuses the new pane.
+    /// `placingFirst` puts the new pane left/top instead of right/bottom.
+    func split(paneSessionID: UUID, axis: PaneAxis, newSession: TerminalSession, placingFirst: Bool) {
+        guard let leaf = pane(containing: paneSessionID) else { return }
         subscribe(newSession)
 
         let newLeaf = Pane(session: newSession)
-        let split = Pane(axis: axis, children: [leaf, newLeaf])
+        let ordered = placingFirst ? [newLeaf, leaf] : [leaf, newLeaf]
+        let split = Pane(axis: axis, children: ordered)
         split.parent = leaf.parent
         leaf.parent = split
         newLeaf.parent = split
@@ -130,6 +136,35 @@ final class Tab: ObservableObject, Identifiable {
 
         self.focusedSessionID = newSession.id
         objectWillChange.send()
+    }
+
+    /// Removes `sessionID` from the tree without terminating it (used when a
+    /// session is dragged into another tab). Returns false if the tab is now
+    /// empty.
+    func detach(sessionID: UUID) -> Bool {
+        guard let leaf = pane(containing: sessionID) else { return false }
+        guard let parent = leaf.parent else { return false }
+
+        guard let sibling = parent.children?.first(where: { $0 !== leaf }) else { return false }
+        if let session = leaf.session {
+            unsubscribe(session)
+        }
+
+        if let grandparent = parent.parent {
+            if let index = grandparent.children?.firstIndex(where: { $0 === parent }) {
+                grandparent.children?[index] = sibling
+            }
+            sibling.parent = grandparent
+        } else {
+            root = sibling
+            sibling.parent = nil
+        }
+
+        if let next = firstLeaf(of: sibling) {
+            focusedSessionID = next.id
+        }
+        objectWillChange.send()
+        return true
     }
 
     /// Removes the focused leaf. If it has a sibling, the sibling takes its
