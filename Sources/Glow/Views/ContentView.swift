@@ -23,7 +23,7 @@ struct ContentView: View {
                 ZStack {
                     ForEach(model.tabs) { tab in
                         TabPaneView(tab: tab, model: model)
-                            .padding(EdgeInsets(top: 10, leading: 12, bottom: 10, trailing: 12))
+                            .padding(EdgeInsets(top: 14, leading: 16, bottom: 14, trailing: 16))
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -111,7 +111,7 @@ private struct PaneNodeView: View {
 
     private func focusBorder(for session: TerminalSession) -> some View {
         let isFocused = isSelectedTab && session.id == tab.focusedSessionID
-        return RoundedRectangle(cornerRadius: 6, style: .continuous)
+        return Rectangle()
             .stroke(Color.accentColor.opacity(isFocused ? 0.8 : 0), lineWidth: 1.5)
     }
 

@@ -41,7 +41,7 @@ struct FolderSidebarView: View {
                         .padding(.vertical, 5)
                         .contentShape(Rectangle())
                         .background(
-                            RoundedRectangle(cornerRadius: 5, style: .continuous)
+                            Rectangle()
                                 .fill(hoveringOpen ? Color.accentColor.opacity(0.12) : Color.clear)
                         )
                 }

@@ -2,12 +2,24 @@ import SwiftUI
 
 struct FindBarView: View {
     @ObservedObject var model: WindowModel
+    @ObservedObject private var appModel = AppModel.shared
     var findFocused: FocusState<Bool>.Binding
 
     var body: some View {
         HStack(spacing: 8) {
             TextField("Find in scrollback", text: $model.findText)
-                .textFieldStyle(.roundedBorder)
+                .textFieldStyle(.plain)
+                .font(.system(size: 13))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .background(
+                    Rectangle()
+                        .fill(Color(nsColor: appModel.theme.background))
+                        .overlay(
+                            Rectangle()
+                                .stroke(Color(nsColor: appModel.theme.separator), lineWidth: 1)
+                        )
+                )
                 .focused(findFocused)
                 .onAppear { findFocused.wrappedValue = true }
                 .onSubmit { model.findNext() }
@@ -46,6 +58,6 @@ struct FindBarView: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
-        .background(.bar)
+        .background(Color(nsColor: appModel.theme.chrome))
     }
 }

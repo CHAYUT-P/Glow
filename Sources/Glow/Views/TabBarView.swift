@@ -96,7 +96,7 @@ private struct TabItemView: View {
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
         .background(
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
+            Rectangle()
                 .fill(tabBackground)
         )
         .contentShape(Rectangle())
