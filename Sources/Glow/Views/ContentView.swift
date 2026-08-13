@@ -86,13 +86,13 @@ private struct PaneNodeView: View {
                 }
             } else if let axis = pane.axis, let children = pane.children, children.count == 2 {
                 if axis == .horizontal {
-                    HStack(spacing: 0) {
+                    HStack(spacing: 6) {
                         PaneNodeView(tab: tab, model: model, pane: children[0])
                         Divider()
                         PaneNodeView(tab: tab, model: model, pane: children[1])
                     }
                 } else {
-                    VStack(spacing: 0) {
+                    VStack(spacing: 6) {
                         PaneNodeView(tab: tab, model: model, pane: children[0])
                         Divider()
                         PaneNodeView(tab: tab, model: model, pane: children[1])
