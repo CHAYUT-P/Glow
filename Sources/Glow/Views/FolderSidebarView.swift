@@ -6,6 +6,7 @@ struct FolderSidebarView: View {
     @ObservedObject var model: WindowModel
     @ObservedObject private var appModel = AppModel.shared
     @State private var selected: String?
+    @State private var hoveringOpen = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -29,16 +30,29 @@ struct FolderSidebarView: View {
             }
             .listStyle(.sidebar)
             Divider()
-            HStack {
+            VStack(alignment: .leading, spacing: 6) {
                 Button {
                     model.openFolderPanel()
                 } label: {
                     Label("Open…", systemImage: "folder.badge.plus")
                         .font(.system(size: 12))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.vertical, 5)
+                        .contentShape(Rectangle())
+                        .background(
+                            RoundedRectangle(cornerRadius: 5, style: .continuous)
+                                .fill(hoveringOpen ? Color.accentColor.opacity(0.12) : Color.clear)
+                        )
                 }
                 .buttonStyle(.plain)
+                .onHover { hoveringOpen = $0 }
                 .help("Open a folder in a new tab")
-                Spacer()
+                Text(model.selectedFolder ?? "No folder selected")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding(8)
         }

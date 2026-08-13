@@ -62,10 +62,28 @@ struct GlowCommands: Commands {
             Button("Find Previous") { windowModel?.findPrevious() }
                 .keyboardShortcut("g", modifiers: [.command, .shift])
             Divider()
+            Button("Clear Scrollback") { windowModel?.clearScrollback() }
+                .keyboardShortcut("k", modifiers: .command)
+            Divider()
+            Button("Increase Font Size") { AppModel.shared.increaseFontSize() }
+                .keyboardShortcut("=", modifiers: .command)
+            Button("Decrease Font Size") { AppModel.shared.decreaseFontSize() }
+                .keyboardShortcut("-", modifiers: .command)
+            Button("Reset Font Size") { AppModel.shared.resetFontSize() }
+                .keyboardShortcut("0", modifiers: .command)
+            Divider()
             Button("Copy Last Output") { windowModel?.copyLastOutput() }
                 .keyboardShortcut("c", modifiers: [.command, .shift])
         }
         CommandMenu("Tabs") {
+            Button("Previous Tab") { windowModel?.selectPreviousTab() }
+                .keyboardShortcut("[", modifiers: [.command, .shift])
+            Button("Next Tab") { windowModel?.selectNextTab() }
+                .keyboardShortcut("]", modifiers: [.command, .shift])
+            Divider()
+            Button("Reopen Closed Tab") { windowModel?.reopenClosedTab() }
+                .keyboardShortcut("t", modifiers: [.command, .shift])
+            Divider()
             ForEach(0..<9, id: \.self) { index in
                 Button("Select Tab \(index + 1)") { windowModel?.selectTab(at: index) }
                     .keyboardShortcut(KeyEquivalent(Character("\(index + 1)")), modifiers: .command)

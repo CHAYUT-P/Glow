@@ -93,7 +93,6 @@ private struct TabItemView: View {
         )
         .contentShape(Rectangle())
         .onTapGesture { model.selectTab(id: session.id) }
-        .onTapGesture(count: 2) { beginRename() }
         .contextMenu { tabContextMenu }
         .onDrag { NSItemProvider(object: session.id.uuidString as NSString) }
         .onDrop(of: [UTType.text], delegate: TabDropDelegate(sourceID: session.id, model: model))
@@ -102,6 +101,7 @@ private struct TabItemView: View {
     private var tabContextMenu: some View {
         VStack {
             Button("Rename…") { beginRename() }
+            Button("Reset Title") { session.resetTitle() }
             Menu("Tab Color") {
                 Button("None") { session.colorHex = "" }
                 ForEach(GlowTheme.tabColors, id: \.hex) { item in
@@ -111,6 +111,9 @@ private struct TabItemView: View {
             Divider()
             Button("Set Start Command…") { model.promptSetStartCommand(for: session) }
             Button("Run Start Command") { model.runStartCommand(for: session) }
+            Divider()
+            Button("Restart Session") { session.restart() }
+                .disabled(session.isRunning)
             Divider()
             Button("Copy Last Output") { session.copyLastBlock() }
             Divider()

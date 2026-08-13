@@ -20,6 +20,10 @@ final class AppModel: ObservableObject {
 
     var theme: GlowTheme { GlowTheme.forName(settings.themeName) }
 
+    func increaseFontSize() { settings.fontSize = min(24, settings.fontSize + 1) }
+    func decreaseFontSize() { settings.fontSize = max(8, settings.fontSize - 1) }
+    func resetFontSize() { settings.fontSize = 13 }
+
     private var persistWorkItem: DispatchWorkItem?
     private var shouldRestoreOnLaunch = true
     private let stateURL: URL

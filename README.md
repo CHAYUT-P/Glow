@@ -25,8 +25,9 @@ swift build
 
 - **One window per session**, tabs on top, folder sidebar on the left.
 - **Tabs**: name them, color them, reorder by drag, close with the × or
-  `Cmd+W`. Shortcuts: `Cmd+T` new tab, `Cmd+1`…`Cmd+9` select tab.
-  Each tab has its own shell in its own folder.
+  `Cmd+W`. Shortcuts: `Cmd+T` new tab, `Cmd+1`…`Cmd+9` select tab,
+  `Cmd+Shift+[` / `Cmd+Shift+]` previous / next tab, `Cmd+Shift+T` reopen
+  the last closed tab. Each tab has its own shell in its own folder.
 - **Folders**: sidebar shows Home + recent folders. `Open…` (`Cmd+O`)
   uses a folder picker. Double-click a folder, or drag one from Finder onto
   the sidebar, the tab bar, or the terminal — a new tab starts there. No
@@ -39,6 +40,9 @@ swift build
   restores one into a new window. Optionally auto-restore the last layout
   on launch (Settings).
 - **Find in scrollback**: `Cmd+F`, `Cmd+G` / `Cmd+Shift+G`, Esc to close.
+- **Clear scrollback**: `Cmd+K` (keeps the visible screen).
+- **Font size**: `Cmd+=` / `Cmd+-` / `Cmd+0` to grow, shrink, or reset
+  (also in Settings).
 - **Copy last output**: `Cmd+Shift+C` (or the tab context menu) copies the
   last command plus its output — the text between the last Enter and the
   end of the scrollback.

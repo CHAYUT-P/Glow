@@ -80,6 +80,13 @@ final class TerminalSession: ObservableObject, Identifiable, LocalProcessTermina
         terminalView.terminate()
     }
 
+    /// Restarts the shell in the same folder (and re-runs the start command).
+    /// Only meaningful after the previous process terminated.
+    func restart() {
+        guard !isRunning else { return }
+        start()
+    }
+
     // MARK: - Block copy
 
     private func noteCommandSubmit() {
@@ -158,6 +165,12 @@ final class TerminalSession: ObservableObject, Identifiable, LocalProcessTermina
             title = trimmed
             titleIsCustom = true
         }
+    }
+
+    func resetTitle() {
+        titleIsCustom = false
+        let folderName = URL(fileURLWithPath: folder).lastPathComponent
+        title = folderName.isEmpty ? "terminal" : folderName
     }
 
     func applyAppearance() {

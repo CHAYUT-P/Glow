@@ -89,9 +89,39 @@ final class WindowModel: ObservableObject {
         selectTab(id: tabs[index].id)
     }
 
+    func selectPreviousTab() {
+        guard !tabs.isEmpty else { return }
+        let index = selectedTabID.flatMap { id in tabs.firstIndex { $0.id == id } } ?? 0
+        selectTab(id: tabs[(index - 1 + tabs.count) % tabs.count].id)
+    }
+
+    func selectNextTab() {
+        guard !tabs.isEmpty else { return }
+        let index = selectedTabID.flatMap { id in tabs.firstIndex { $0.id == id } } ?? 0
+        selectTab(id: tabs[(index + 1) % tabs.count].id)
+    }
+
+    func clearScrollback() {
+        selectedSession?.terminalView.terminal.clearScrollback()
+    }
+
+    private struct ClosedTabSnapshot {
+        let folder: String
+        let title: String
+        let colorHex: String
+        let startCommand: String?
+    }
+
+    private var closedTabs: [ClosedTabSnapshot] = []
+
     func closeTab(id: UUID) {
         guard let index = tabs.firstIndex(where: { $0.id == id }) else { return }
         let session = tabs[index]
+        closedTabs.append(ClosedTabSnapshot(
+            folder: session.folder, title: session.title,
+            colorHex: session.colorHex, startCommand: session.startCommand
+        ))
+        if closedTabs.count > 10 { closedTabs.removeFirst(closedTabs.count - 10) }
         tabs.remove(at: index)
         session.close()
         if selectedTabID == id {
@@ -100,6 +130,12 @@ final class WindowModel: ObservableObject {
         if tabs.isEmpty {
             newTab(folder: homeDirectory, title: nil, colorHex: nil, startCommand: nil)
         }
+    }
+
+    func reopenClosedTab() {
+        guard let snapshot = closedTabs.popLast() else { return }
+        newTab(folder: snapshot.folder, title: snapshot.title,
+               colorHex: snapshot.colorHex, startCommand: snapshot.startCommand)
     }
 
     func closeSelectedTab() {
@@ -299,6 +335,11 @@ final class WindowModel: ObservableObject {
         observers.append(nc.addObserver(forName: NSWindow.didBecomeKeyNotification, object: nil, queue: .main) { [weak self] note in
             guard let w = note.object as? NSWindow, w === self?.window else { return }
             self?.isKeyWindow = true
+            // Return focus to the terminal when the user comes back to Glow,
+            // unless they're in the middle of a find.
+            if self?.findVisible != true {
+                self?.focusTerminal()
+            }
         })
         observers.append(nc.addObserver(forName: NSWindow.didResignKeyNotification, object: nil, queue: .main) { [weak self] note in
             guard let w = note.object as? NSWindow, w === self?.window else { return }
