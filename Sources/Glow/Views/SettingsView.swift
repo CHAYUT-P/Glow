@@ -28,5 +28,6 @@ struct SettingsView: View {
         }
         .padding(24)
         .frame(width: 460)
+        .tint(Color(nsColor: appModel.theme.accent))
     }
 }

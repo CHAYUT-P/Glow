@@ -185,6 +185,7 @@ final class TerminalSession: ObservableObject, Identifiable, LocalProcessTermina
         view.selectedTextForegroundColor = theme.selectionForeground
         view.layer?.backgroundColor = theme.background.cgColor
         view.font = GlowTheme.makeFont(name: settings.fontName, size: settings.fontSize)
+        view.installColors(theme.ansi)
         view.needsDisplay = true
     }
 

@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 
 struct TabBarView: View {
     @ObservedObject var model: WindowModel
+    @ObservedObject private var appModel = AppModel.shared
 
     var body: some View {
         HStack(spacing: 4) {
@@ -35,7 +36,12 @@ struct TabBarView: View {
         .padding(.leading, 76) // leave room for the traffic lights (hidden title bar)
         .padding(.trailing, 8)
         .padding(.vertical, 6)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(Color(nsColor: appModel.theme.chrome))
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(Color(nsColor: appModel.theme.separator))
+                .frame(height: 1)
+        }
         .onDrop(of: [UTType.fileURL], isTargeted: nil) { providers in
             FolderDrop.handle(providers) { url in
                 model.openFolderInNewTab(url.path)
@@ -48,8 +54,10 @@ struct TabBarView: View {
 private struct TabItemView: View {
     @ObservedObject var tab: Tab
     @ObservedObject var model: WindowModel
+    @ObservedObject private var appModel = AppModel.shared
     @State private var editing = false
     @State private var editingTitle = ""
+    @State private var hovering = false
 
     private var isSelected: Bool { tab.id == model.selectedTabID }
 
@@ -70,6 +78,7 @@ private struct TabItemView: View {
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .frame(maxWidth: 130)
+                    .foregroundStyle(isSelected ? Color.primary : Color.secondary)
             }
             if tab.attention {
                 Circle().fill(Color.orange).frame(width: 6, height: 6)
@@ -88,14 +97,25 @@ private struct TabItemView: View {
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
         .background(
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(isSelected ? Color.accentColor.opacity(0.22) : Color.clear)
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .fill(tabBackground)
         )
         .contentShape(Rectangle())
+        .onHover { hovering = $0 }
         .onTapGesture { model.selectTab(id: tab.id) }
         .contextMenu { tabContextMenu }
         .onDrag { NSItemProvider(object: tab.id.uuidString as NSString) }
         .onDrop(of: [UTType.text], delegate: TabDropDelegate(sourceID: tab.id, model: model))
+    }
+
+    private var tabBackground: Color {
+        if isSelected {
+            return Color(nsColor: appModel.theme.accent).opacity(0.16)
+        }
+        if hovering {
+            return Color.primary.opacity(0.06)
+        }
+        return Color.clear
     }
 
     private var tabContextMenu: some View {

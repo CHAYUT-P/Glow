@@ -63,7 +63,11 @@ swift build
 - **Global hotkey**: `Ctrl+`` shows/hides Glow (iTerm-style). Disable in
   Settings.
 - **Appearance**: Settings (`Cmd+,`) — dark/light theme, font
-  (SF Mono / Menlo / Monaco / JetBrains Mono…), size 8–24.
+  (SF Mono / Menlo / Monaco / JetBrains Mono…), size 8–24. The look is
+  adapted from Warp's design system: pure-black (or pure-white) terminal,
+  cyan `#00C2FF` accent reused across focus borders, selection, tabs and
+  buttons, Warp's 16-color ANSI palette, and chrome surfaces lifted from
+  the terminal with hairline separators.
 
 ## Where state lives
 

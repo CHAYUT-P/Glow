@@ -29,6 +29,7 @@ struct FolderSidebarView: View {
                 }
             }
             .listStyle(.sidebar)
+            .tint(Color(nsColor: appModel.theme.accent))
             Divider()
             VStack(alignment: .leading, spacing: 6) {
                 Button {
@@ -56,7 +57,7 @@ struct FolderSidebarView: View {
             }
             .padding(8)
         }
-        .background(Color(nsColor: .controlBackgroundColor))
+        .background(Color(nsColor: appModel.theme.chrome))
         .onDrop(of: [UTType.fileURL], isTargeted: nil) { providers in
             FolderDrop.handle(providers) { url in
                 model.openFolderInNewTab(url.path)

@@ -35,6 +35,7 @@ struct ContentView: View {
         }
         .frame(minWidth: 720, minHeight: 440)
         .preferredColorScheme(appModel.theme.colorScheme)
+        .tint(Color(nsColor: appModel.theme.accent))
         .focusedSceneValue(\.windowModel, model)
         .environmentObject(model)
         .onChange(of: model.findFocusRequest) { _ in
@@ -104,8 +105,8 @@ private struct PaneNodeView: View {
 
     private func focusBorder(for session: TerminalSession) -> some View {
         let isFocused = isSelectedTab && session.id == tab.focusedSessionID
-        return RoundedRectangle(cornerRadius: 5, style: .continuous)
-            .stroke(Color.accentColor.opacity(isFocused ? 0.6 : 0), lineWidth: 1.5)
+        return RoundedRectangle(cornerRadius: 6, style: .continuous)
+            .stroke(Color.accentColor.opacity(isFocused ? 0.8 : 0), lineWidth: 1.5)
     }
 
     @ViewBuilder
