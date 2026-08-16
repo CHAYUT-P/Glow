@@ -142,6 +142,15 @@ final class TerminalSession: ObservableObject, Identifiable, LocalProcessTermina
         if burstStart == nil { burstStart = lastActivity }
     }
 
+    /// Forget any burst recorded while Glow was in the foreground. The
+    /// attention timer only runs in the background, so output that was visible
+    /// on screen must not be treated as a background burst on the next app
+    /// switch.
+    func resetAttentionTracking() {
+        burstStart = nil
+        lastActivity = Date()
+    }
+
     /// Called on a timer by the window: if a burst of output ended more than
     /// ~2.5s ago and the burst ran longer than 5s, and Glow is not in front,
     /// mark the tab and bounce the Dock icon once.
@@ -196,7 +205,7 @@ final class TerminalSession: ObservableObject, Identifiable, LocalProcessTermina
     func setTerminalTitle(source: LocalProcessTerminalView, title: String) {
         // SwiftTerm may call this from its feed queue.
         DispatchQueue.main.async { [weak self] in
-            guard let self = self, !self.titleIsCustom, !title.isEmpty else { return }
+            guard let self = self, !self.titleIsCustom, !title.isEmpty, self.title != title else { return }
             self.title = title
         }
     }

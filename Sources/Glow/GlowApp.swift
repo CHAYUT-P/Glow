@@ -89,6 +89,9 @@ struct GlowCommands: Commands {
             Divider()
             Button("Copy Last Output") { windowModel?.copyLastOutput() }
                 .keyboardShortcut("c", modifiers: [.command, .shift])
+            Divider()
+            Button("Insert File Path…") { windowModel?.insertPickedFiles() }
+                .keyboardShortcut("a", modifiers: [.command, .shift])
         }
         CommandMenu("Tabs") {
             Button("Previous Tab") { windowModel?.selectPreviousTab() }
@@ -155,8 +158,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         false
     }
 
+    /// Dock click with no visible windows: reopen a fresh window (same as
+    /// Cmd+N / the Ctrl+` hotkey when nothing is showing).
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !flag {
+            openMainWindow()
+        }
+        return false
+    }
+
     func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool {
         true
+    }
+
+    private func openMainWindow() {
+        let content = ContentView(request: .plain)
+        let hosting = NSHostingController(rootView: content)
+        let window = NSWindow(contentViewController: hosting)
+        window.title = "Glow"
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
+        window.setContentSize(NSSize(width: 1080, height: 700))
+        window.minSize = NSSize(width: 720, height: 440)
+        window.isReleasedWhenClosed = false
+        window.center()
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     private func closeTabInKeyWindow() -> Bool {
@@ -177,9 +205,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSApp.activate(ignoringOtherApps: true)
             win.makeKeyAndOrderFront(nil)
         } else {
-            // No window exists (user closed it); just bring the app forward.
-            NSApp.setActivationPolicy(.regular)
-            NSApp.activate(ignoringOtherApps: true)
+            // No window exists (user closed it); open a fresh one.
+            openMainWindow()
         }
     }
 }

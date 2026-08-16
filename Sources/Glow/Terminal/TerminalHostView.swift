@@ -28,7 +28,14 @@ struct TerminalHostView: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: TerminalView, context: Context) {
-        windowModel.attachWindow(nsView.window)
+        // Attach off the current graph turn. Mutating WindowModel (or making
+        // the terminal first responder) inside updateNSView is an
+        // AttributeGraph cycle and freezes the window.
+        if let window = nsView.window, windowModel.window !== window {
+            DispatchQueue.main.async { [weak windowModel] in
+                windowModel?.attachWindow(window)
+            }
+        }
         let coordinator = context.coordinator
         let visibleChanged = isVisible != coordinator.wasVisible
         let focusedChanged = isFocused != coordinator.wasFocused
@@ -44,8 +51,17 @@ struct TerminalHostView: NSViewRepresentable {
             nsView.needsDisplay = true
         }
         if isFocused, focusedChanged, !suppressFocus {
-            focus(nsView)
+            DispatchQueue.main.async { [weak nsView] in
+                guard let nsView else { return }
+                focus(nsView)
+            }
         }
+    }
+
+    static func dismantleNSView(_ nsView: TerminalView, coordinator: Coordinator) {
+        // TerminalSession owns the NSView for the session lifetime. SwiftUI's
+        // default dismantle calls removeFromSuperview, which races a new
+        // representable reusing the same view and orphans it.
     }
 
     private func focus(_ nsView: TerminalView) {

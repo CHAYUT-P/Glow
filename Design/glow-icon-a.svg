@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- Glow icon concept A: flat ">_" prompt -->
+  <defs>
+    <radialGradient id="bg" cx="40%" cy="36%" r="80%">
+      <stop offset="0%" stop-color="#211D1B"/>
+      <stop offset="100%" stop-color="#151211"/>
+    </radialGradient>
+  </defs>
+  <!-- squircle background -->
+  <rect x="0" y="0" width="1024" height="1024" rx="228" fill="url(#bg)"/>
+  <!-- hairline ring -->
+  <rect x="50" y="50" width="924" height="924" rx="188" fill="none" stroke="#3B3734" stroke-width="6"/>
+  <!-- chevron: ">" -->
+  <path d="M 344 398 L 574 512 L 344 626"
+        fill="none" stroke="#FAF9F8" stroke-width="84"
+        stroke-linecap="square" stroke-linejoin="miter"/>
+  <!-- cursor block: "_" -->
+  <rect x="656" y="430" width="58" height="164" rx="12" fill="#FAF9F8"/>
+</svg>

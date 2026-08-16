@@ -12,9 +12,15 @@ struct FolderSidebarView: View {
         VStack(spacing: 0) {
             List(selection: $selected) {
                 Section("Places") {
-                    Label("Home", systemImage: "house")
-                        .tag(homeTag)
-                        .onTapGesture(count: 2) { openFolder(NSHomeDirectory()) }
+                    HStack(spacing: 6) {
+                        Image(systemName: "house")
+                            .foregroundStyle(.secondary)
+                        Text("Home")
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                    .tag(homeTag)
+                    .onTapGesture(count: 2) { openFolder(NSHomeDirectory()) }
                 }
                 Section("Recents") {
                     if appModel.recentFolders.isEmpty {
@@ -28,9 +34,12 @@ struct FolderSidebarView: View {
                     }
                 }
             }
-            .listStyle(.sidebar)
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
             .tint(Color(nsColor: appModel.theme.accent))
-            Divider()
+            Rectangle()
+                .fill(Color(nsColor: appModel.theme.separator))
+                .frame(height: 1)
             VStack(alignment: .leading, spacing: 6) {
                 Button {
                     model.openFolderPanel()
@@ -42,7 +51,7 @@ struct FolderSidebarView: View {
                         .contentShape(Rectangle())
                         .background(
                             Rectangle()
-                                .fill(hoveringOpen ? Color.accentColor.opacity(0.12) : Color.clear)
+                                .fill(hoveringOpen ? Color(nsColor: appModel.theme.accent).opacity(0.12) : Color.clear)
                         )
                 }
                 .buttonStyle(.plain)

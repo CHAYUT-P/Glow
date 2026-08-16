@@ -111,6 +111,19 @@ final class Tab: ObservableObject, Identifiable {
 
     // MARK: - Pane mutations
 
+    /// Replaces the pane tree (used when restoring a saved split layout) and
+    /// subscribes every session so the tab bar stays live.
+    func restore(from newRoot: Pane) {
+        root = newRoot
+        for session in allSessions {
+            subscribe(session)
+        }
+        if let first = allSessions.first {
+            focusedSessionID = first.id
+        }
+        objectWillChange.send()
+    }
+
     /// Replaces the pane holding `paneSessionID` with a split containing that
     /// pane and a new pane holding `newSession`, then focuses the new pane.
     /// `placingFirst` puts the new pane left/top instead of right/bottom.

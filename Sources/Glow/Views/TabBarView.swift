@@ -2,12 +2,36 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
+/// Drag type carried by tab drags (tab reorder + drag-tab-to-split). Unique
+/// to Glow, so drop targets can accept tab drags and nothing else: Finder
+/// files never carry this type, so they can never trigger split UI.
+let GlowTabDragType = UTType(exportedAs: "com.glow.tab-drag")
+
+/// In-process registry for the tab currently being dragged. SwiftUI's drag
+/// sessions don't materialize data into the pasteboard for in-app drags
+/// (the pasteboard only carries the type), so the dragged tab's ID is
+/// passed through this shared state, set when the drag starts. The
+/// pasteboard type is still what *identifies* the drag as a tab drag.
+enum TabDragState {
+    static var currentTabID: UUID?
+}
+
 struct TabBarView: View {
     @ObservedObject var model: WindowModel
     @ObservedObject private var appModel = AppModel.shared
 
     var body: some View {
         HStack(spacing: 4) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.15)) { model.sidebarVisible.toggle() }
+            } label: {
+                Image(systemName: "sidebar.left")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .padding(4)
+            }
+            .buttonStyle(.plain)
+            .help("Toggle Folder Sidebar")
             ForEach(model.tabs) { tab in
                 TabItemView(tab: tab, model: model)
             }
@@ -22,16 +46,6 @@ struct TabBarView: View {
             .buttonStyle(.plain)
             .help("New Tab")
             Spacer(minLength: 8)
-            Button {
-                withAnimation(.easeInOut(duration: 0.15)) { model.sidebarVisible.toggle() }
-            } label: {
-                Image(systemName: "sidebar.left")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                    .padding(4)
-            }
-            .buttonStyle(.plain)
-            .help("Toggle Folder Sidebar")
         }
         .padding(.leading, 76) // leave room for the traffic lights (hidden title bar)
         .padding(.trailing, 8)
@@ -103,8 +117,21 @@ private struct TabItemView: View {
         .onHover { hovering = $0 }
         .onTapGesture { model.selectTab(id: tab.id) }
         .contextMenu { tabContextMenu }
-        .onDrag { NSItemProvider(object: tab.id.uuidString as NSString) }
-        .onDrop(of: [UTType.text], delegate: TabDropDelegate(sourceID: tab.id, model: model))
+        .onDrag {
+            TabDragState.currentTabID = tab.id
+            let provider = NSItemProvider()
+            provider.registerDataRepresentation(forTypeIdentifier: GlowTabDragType.identifier, visibility: .ownProcess) { completion in
+                completion(tab.id.uuidString.data(using: .utf8), nil)
+                return nil
+            }
+            return provider
+        }
+        .onDrop(of: [GlowTabDragType], isTargeted: nil) { _ in
+            guard let draggedID = TabDragState.currentTabID else { return false }
+            TabDragState.currentTabID = nil
+            model.moveTab(from: draggedID, to: tab.id)
+            return true
+        }
     }
 
     private var tabBackground: Color {
@@ -164,27 +191,5 @@ private struct TabItemView: View {
     private func commitRename() {
         editing = false
         tab.focusedSession?.setCustomTitle(editingTitle)
-    }
-}
-
-private struct TabDropDelegate: DropDelegate {
-    let sourceID: UUID
-    let model: WindowModel
-
-    func performDrop(info: DropInfo) -> Bool {
-        guard let provider = info.itemProviders(for: [.text]).first else { return false }
-        provider.loadItem(forTypeIdentifier: UTType.text.identifier, options: nil) { item, _ in
-            var idString: String?
-            if let data = item as? Data {
-                idString = String(data: data, encoding: .utf8)
-            } else if let string = item as? String {
-                idString = string
-            }
-            guard let idString, let targetID = UUID(uuidString: idString) else { return }
-            DispatchQueue.main.async {
-                model.moveTab(from: targetID, to: sourceID)
-            }
-        }
-        return true
     }
 }

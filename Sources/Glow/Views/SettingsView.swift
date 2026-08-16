@@ -18,8 +18,9 @@ struct SettingsView: View {
                     .frame(width: 24, alignment: .trailing)
             }
             Picker("Theme", selection: $appModel.settings.themeName) {
-                Text("Dark").tag("dark")
-                Text("Light").tag("light")
+                ForEach(GlowTheme.all, id: \.name) { theme in
+                    Text(theme.displayName).tag(theme.name)
+                }
             }
             Divider()
             Toggle("Open last layout on launch", isOn: $appModel.settings.openLastLayoutOnLaunch)

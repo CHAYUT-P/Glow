@@ -26,7 +26,9 @@ final class WindowModel: ObservableObject {
     @Published var findMatchTotal = 0
     @Published var findFocusRequest = 0
 
-    @Published var isKeyWindow = false
+    /// Not `@Published`: only the attention timer reads this, and setting it
+    /// from window notifications must not invalidate the SwiftUI graph.
+    private(set) var isKeyWindow = false
 
     weak var window: NSWindow?
 
@@ -60,6 +62,30 @@ final class WindowModel: ObservableObject {
         }
         startAttentionTimer()
         observeNotifications()
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["GLOW_DEBUG_SHOT"] == "1" {
+            var attempts = 0
+            var shoot: (() -> Void)?
+            shoot = { [weak self] in
+                attempts += 1
+                guard let self, attempts <= 15 else { return }
+                let win = self.window ?? NSApp.keyWindow
+                guard let win, let content = win.contentView else {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1) { shoot?() }
+                    return
+                }
+                guard let rep = content.bitmapImageRepForCachingDisplay(in: content.bounds) else {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1) { shoot?() }
+                    return
+                }
+                content.cacheDisplay(in: content.bounds, to: rep)
+                if let data = rep.representation(using: .png, properties: [:]) {
+                    try? data.write(to: URL(fileURLWithPath: "/tmp/glow-shot.png"))
+                }
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) { shoot?() }
+        }
+        #endif
     }
 
     deinit {
@@ -300,25 +326,63 @@ final class WindowModel: ObservableObject {
     }
 
     func saveLayout(name: String) {
-        let saved = tabs.compactMap { tab in
-            tab.focusedSession.map { session in
-                SavedTab(title: session.title, colorHex: session.colorHex,
-                         folder: session.cwd, startCommand: session.startCommand)
-            }
+        let saved = tabs.map { tab in
+            let focused = tab.focusedSession
+            return SavedTab(title: focused?.title ?? "",
+                            colorHex: focused?.colorHex ?? "",
+                            folder: focused?.cwd ?? homeDirectory,
+                            startCommand: focused?.startCommand,
+                            panes: savedPane(from: tab.root))
         }
         AppModel.shared.addLayout(SavedLayout(name: name, tabs: saved))
     }
 
+    private func savedPane(from pane: Pane) -> SavedPane {
+        if let session = pane.session {
+            return SavedPane(axis: nil, children: nil, folder: session.cwd,
+                             title: session.title, colorHex: session.colorHex,
+                             startCommand: session.startCommand)
+        }
+        return SavedPane(axis: pane.axis == .horizontal ? "h" : "v",
+                         children: (pane.children ?? []).map { savedPane(from: $0) },
+                         folder: nil, title: nil, colorHex: nil, startCommand: nil)
+    }
+
     func restore(layout: SavedLayout) {
         for tab in layout.tabs {
-            newTab(folder: tab.folder, title: tab.title, colorHex: tab.colorHex,
-                   startCommand: tab.startCommand, select: false)
+            if let panes = tab.panes, let root = makePane(from: panes), let session = firstSession(of: root) {
+                let restored = Tab(session: session)
+                restored.restore(from: root)
+                tabs.append(restored)
+            } else {
+                newTab(folder: tab.folder, title: tab.title, colorHex: tab.colorHex,
+                       startCommand: tab.startCommand, select: false)
+            }
         }
         if tabs.isEmpty {
             newTab(folder: homeDirectory, title: nil, colorHex: nil, startCommand: nil)
         } else {
             selectTab(id: tabs[0].id)
         }
+    }
+
+    private func makePane(from saved: SavedPane) -> Pane? {
+        if let children = saved.children, let axisName = saved.axis, children.count == 2,
+           let first = makePane(from: children[0]), let second = makePane(from: children[1]) {
+            let branch = Pane(axis: axisName == "h" ? .horizontal : .vertical, children: [first, second])
+            first.parent = branch
+            second.parent = branch
+            return branch
+        }
+        guard let folder = saved.folder else { return nil }
+        let session = makeSession(folder: folder, title: saved.title,
+                                  colorHex: saved.colorHex, startCommand: saved.startCommand)
+        return Pane(session: session)
+    }
+
+    private func firstSession(of pane: Pane) -> TerminalSession? {
+        if let session = pane.session { return session }
+        return pane.children?.first.flatMap { firstSession(of: $0) }
     }
 
     // MARK: - Start commands
@@ -423,6 +487,23 @@ final class WindowModel: ObservableObject {
         selectedSession?.copyLastBlock()
     }
 
+    /// Picks files (or folders) and inserts their paths into the focused
+    /// terminal, so the result can be typed around (e.g. Grok `@path`).
+    func insertPickedFiles() {
+        guard let session = selectedSession else { return }
+        let panel = NSOpenPanel()
+        panel.title = "Attach Files"
+        panel.prompt = "Insert Path"
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = true
+        guard panel.runModal() == .OK else { return }
+        let text = FilePaste.text(for: panel.urls)
+        guard !text.isEmpty else { return }
+        session.terminalView.send(txt: text)
+        session.terminalView.window?.makeFirstResponder(session.terminalView)
+    }
+
     func focusTerminal() {
         guard let view = selectedSession?.terminalView, let win = view.window else { return }
         win.makeFirstResponder(view)
@@ -441,12 +522,10 @@ final class WindowModel: ObservableObject {
     // MARK: - Window state
 
     func attachWindow(_ newWindow: NSWindow?) {
-        guard window !== newWindow else { return }
+        guard let newWindow, window !== newWindow else { return }
         window = newWindow
-        if let newWindow {
-            isKeyWindow = newWindow.isKeyWindow
-            WindowRegistry.register(window: newWindow, model: self)
-        }
+        isKeyWindow = newWindow.isKeyWindow
+        WindowRegistry.register(window: newWindow, model: self)
     }
 
     private func observeNotifications() {
@@ -454,25 +533,57 @@ final class WindowModel: ObservableObject {
         observers.append(nc.addObserver(forName: NSWindow.didBecomeKeyNotification, object: nil, queue: .main) { [weak self] note in
             guard let w = note.object as? NSWindow, w === self?.window else { return }
             self?.isKeyWindow = true
+            self?.updateAttentionTimer()
             // Return focus to the terminal when the user comes back to Glow,
-            // unless they're in the middle of a find.
+            // unless they're in the middle of a find. Defer so this never
+            // runs in the middle of a SwiftUI graph update.
             if self?.findVisible != true {
-                self?.focusTerminal()
+                DispatchQueue.main.async { self?.focusTerminal() }
             }
         })
         observers.append(nc.addObserver(forName: NSWindow.didResignKeyNotification, object: nil, queue: .main) { [weak self] note in
             guard let w = note.object as? NSWindow, w === self?.window else { return }
             self?.isKeyWindow = false
+            self?.updateAttentionTimer()
+        })
+        observers.append(nc.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.updateAttentionTimer()
+        })
+        observers.append(nc.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.updateAttentionTimer()
         })
         appSettingsObserver = nc.addObserver(forName: .glowSettingsChanged, object: nil, queue: .main) { [weak self] _ in
             self?.applyAppearanceToAll()
+            self?.updateAttentionTimer()
         }
     }
 
     private func startAttentionTimer() {
-        attentionTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
+        updateAttentionTimer()
+    }
+
+    /// The 1.5s walk over every session only matters when Glow is not in
+    /// front (a background burst ending is what triggers the notice). While
+    /// the window is key and the app active, output is visible, so the timer
+    /// stays invalidated and idle CPU stays near zero.
+    private func updateAttentionTimer() {
+        attentionTimer?.invalidate()
+        attentionTimer = nil
+        guard AppModel.shared.settings.notifyOnCommandDone else { return }
+        guard !(NSApp.isActive && isKeyWindow) else { return }
+        // Only output that arrives after Glow leaves the foreground may count
+        // as a background burst; otherwise a stale burst from visible
+        // foreground output triggers a notice right after switching away.
+        for tab in tabs {
+            for session in tab.allSessions {
+                session.resetAttentionTracking()
+            }
+        }
+        let timer = Timer(timeInterval: 1.5, repeats: true) { [weak self] _ in
             self?.checkAttention()
         }
+        RunLoop.main.add(timer, forMode: .common)
+        attentionTimer = timer
     }
 
     private func checkAttention() {

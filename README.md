@@ -8,18 +8,24 @@ network, no sign-in.
 
 ## Run it
 
+As a proper macOS app (recommended) — builds a release `Glow.app` and
+installs it to `/Applications`, where Spotlight, Launchpad and the Dock
+pick it up like any other app:
+
+```sh
+./Scripts/make-app.sh
+open /Applications/Glow.app
+```
+
+Or run the bare executable during development:
+
 ```sh
 swift run Glow
 ```
 
-or build once and run the binary directly:
-
-```sh
-swift build
-.build/debug/Glow
-```
-
-> There is no app bundle or icon yet — this is a plain dev executable.
+The app bundle is assembled from the SVG icon in `Design/` (rendered with
+`Scripts/svg-to-png.swift` and packed into `AppIcon.icns` by `iconutil`).
+No code signing is needed for local use.
 
 ## What's inside
 
@@ -41,8 +47,10 @@ swift build
   pane lands, and the drop zone indicator follows your cursor while dragging.
 - **Folders**: sidebar shows Home + recent folders. `Open…` (`Cmd+O`)
   uses a folder picker. Double-click a folder, or drag one from Finder onto
-  the sidebar, the tab bar, or the terminal — a new tab starts there. No
-  `cd` needed.
+  the sidebar or the tab bar — a new tab starts there. No `cd` needed.
+  Dropping files (or folders) directly on a terminal inserts their
+  shell-escaped paths into the shell, like the 📎 attach button — drag
+  while typing `open `, `cd `, or a Grok `@path` mention around it.
 - **Start command per tab**: right-click a tab → "Set Start Command…" to
   pin a folder + command (e.g. `grok`). The tab opens that folder and runs
   the command once the shell is ready. "Run Start Command" re-runs it.
@@ -62,8 +70,9 @@ swift build
   and the Dock icon bounces once. Disable in Settings.
 - **Global hotkey**: `Ctrl+`` shows/hides Glow (iTerm-style). Disable in
   Settings.
-- **Appearance**: Settings (`Cmd+,`) — dark/light theme, font
-  (SF Mono / Menlo / Monaco / Source Code Pro / Fira Code…), size 8–24.
+- **Appearance**: Settings (`Cmd+,`) — 9 themes (Dark, Light, Darker,
+  Earth, RawBlock, Midnight, Sepia, Moss, Grok), font (SF Mono / Menlo /
+  Monaco / Source Code Pro / Fira Code / Space Mono…), size 8–24.
   The look follows the ThoughtStream design system: warm neutrals (stone
   `#78716C` accent, warm black / warm white terminal), completely flat
   with sharp 0px edges, hairline borders instead of shadows, and generous
@@ -98,5 +107,7 @@ Sources/Glow/
   Terminal/                GlowTerminalView (SwiftTerm subclass), TerminalHostView (SwiftUI bridge)
   Views/                   ContentView, TabBarView, FolderSidebarView, FindBarView, SettingsView
   Support/                 GlobalHotkey (Carbon), FolderDrop, color helpers
+Design/                    SVG app icon source + generated AppIcon.icns
+Scripts/                   make-app.sh (bundle builder), svg-to-png.swift (alpha-preserving SVG renderer)
 ```
 # Glow
