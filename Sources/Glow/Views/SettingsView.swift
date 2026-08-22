@@ -26,6 +26,8 @@ struct SettingsView: View {
             Toggle("Open last layout on launch", isOn: $appModel.settings.openLastLayoutOnLaunch)
             Toggle("Notify when a command finishes in the background", isOn: $appModel.settings.notifyOnCommandDone)
             Toggle("Global hotkey (Ctrl+`) to show/hide Glow", isOn: $appModel.settings.globalHotkeyEnabled)
+            Divider()
+            Toggle("Confirm before closing a tab with a running process", isOn: $appModel.settings.confirmBeforeClosingRunningProcess)
         }
         .padding(24)
         .frame(width: 460)

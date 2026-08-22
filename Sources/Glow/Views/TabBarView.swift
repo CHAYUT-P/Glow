@@ -16,40 +16,54 @@ enum TabDragState {
     static var currentTabID: UUID?
 }
 
+/// Terminal-styled tab strip: monospace `01 name ×` chips with an accent
+/// edge on the active tab, tmux-style numbering that follows tab order.
+/// Every v1 interaction is kept: click to select, inline rename, color dot,
+/// attention dot, close button, full context menu, drag to reorder and
+/// drag onto terminals to split.
 struct TabBarView: View {
     @ObservedObject var model: WindowModel
     @ObservedObject private var appModel = AppModel.shared
 
     var body: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 2) {
+            // Left-most: sidebar toggle — 28×28 hit target
             Button {
                 withAnimation(.easeInOut(duration: 0.15)) { model.sidebarVisible.toggle() }
             } label: {
-                Image(systemName: "sidebar.left")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                    .padding(4)
+                Text("≡")
+                    .font(.system(size: 13, weight: .regular, design: .monospaced))
+                    .foregroundStyle(Color(nsColor: appModel.theme.foreground).opacity(0.55))
+                    .frame(width: 28, height: 28)
+                    .contentShape(Rectangle())
+                    .background(Rectangle().fill(Color.primary.opacity(0.001)))
             }
             .buttonStyle(.plain)
-            .help("Toggle Folder Sidebar")
-            ForEach(model.tabs) { tab in
-                TabItemView(tab: tab, model: model)
+            .help("Toggle Folder Sidebar (⌘⌥S)")
+
+            ForEach(Array(model.tabs.enumerated()), id: \.element.id) { index, tab in
+                GlowTabItemView(model: model, tab: tab, index: index)
             }
+
+            // New tab — same 28×28 target for symmetry
             Button {
                 model.newTab()
             } label: {
-                Image(systemName: "plus")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .padding(4)
+                Text("+")
+                    .font(.system(size: 13, weight: .medium, design: .monospaced))
+                    .foregroundStyle(Color(nsColor: appModel.theme.foreground).opacity(0.55))
+                    .frame(width: 28, height: 28)
+                    .contentShape(Rectangle())
+                    .background(Rectangle().fill(Color.primary.opacity(0.001)))
             }
             .buttonStyle(.plain)
-            .help("New Tab")
+            .help("New Tab (⌘T)")
+
             Spacer(minLength: 8)
         }
-        .padding(.leading, 76) // leave room for the traffic lights (hidden title bar)
+        .padding(.leading, model.sidebarVisible ? 8 : 72) // 8 when sidebar is open (right next to the 1px separator), 72 only when hidden to clear traffic lights
         .padding(.trailing, 8)
-        .padding(.vertical, 6)
+        .padding(.vertical, 4)
         .background(Color(nsColor: appModel.theme.chrome))
         .overlay(alignment: .bottom) {
             Rectangle()
@@ -65,9 +79,12 @@ struct TabBarView: View {
     }
 }
 
-private struct TabItemView: View {
-    @ObservedObject var tab: Tab
+private struct GlowTabItemView: View {
     @ObservedObject var model: WindowModel
+    @ObservedObject var tab: Tab
+    let index: Int
+
+    @ObservedObject private var appModel = AppModel.shared
     @State private var editing = false
     @State private var editingTitle = ""
     @State private var hovering = false
@@ -75,34 +92,42 @@ private struct TabItemView: View {
     private var isSelected: Bool { tab.id == model.selectedTabID }
 
     var body: some View {
-        HStack(spacing: 5) {
+        HStack(spacing: 6) {
+            Text(String(format: "%02d", index + 1))
+                .font(.system(size: 10, weight: .regular, design: .monospaced))
+                .foregroundStyle(Color.primary.opacity(isSelected ? 0.45 : 0.28))
             if let color = Color(hex: tab.colorHex) {
-                Circle().fill(color).frame(width: 8, height: 8)
+                Circle().fill(color).frame(width: 7, height: 7)
             }
-            if editing {
-                TextField("", text: $editingTitle)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 12, weight: .medium))
-                    .frame(width: 110)
-                    .onSubmit { commitRename() }
-            } else {
-                Text(tab.title)
-                    .font(.system(size: 12, weight: .medium))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .frame(maxWidth: 130)
-                    .foregroundStyle(isSelected ? Color.primary : Color.secondary)
+            Group {
+                if editing {
+                    TextField("", text: $editingTitle)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 12, weight: .medium))
+                        .onSubmit { commitRename() }
+                } else {
+                    Text(tab.title)
+                }
             }
+            .font(.system(size: 12, weight: isSelected ? .semibold : .regular, design: .monospaced))
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .frame(maxWidth: 120)
+            .foregroundStyle(textColor)
+
             if tab.attention {
-                Circle().fill(Color.orange).frame(width: 6, height: 6)
+                Circle()
+                    .fill(Color.orange)
+                    .frame(width: 6, height: 6)
             }
             Button {
                 model.closeTab(id: tab.id)
             } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 8, weight: .bold))
-                    .foregroundStyle(.secondary)
-                    .padding(3)
+                Text("×")
+                    .font(.system(size: 12, weight: .regular, design: .monospaced))
+                    .foregroundStyle(closeButtonColor)
+                    .frame(width: 16, height: 20)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .help("Close Tab")
@@ -113,6 +138,19 @@ private struct TabItemView: View {
             Rectangle()
                 .fill(tabBackground)
         )
+        .overlay(alignment: .leading) {
+            if isSelected {
+                Rectangle()
+                    .fill(Color(nsColor: appModel.theme.accent))
+                    .frame(width: 2)
+            }
+        }
+        .overlay(alignment: .top) {
+            // Hairline above the active tab — box-drawn feel.
+            Rectangle()
+                .fill(Color(nsColor: appModel.theme.accent).opacity(isSelected ? 0.7 : 0))
+                .frame(height: 1)
+        }
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .onTapGesture { model.selectTab(id: tab.id) }
@@ -134,14 +172,19 @@ private struct TabItemView: View {
         }
     }
 
+    private var textColor: Color {
+        if isSelected { return .primary }
+        return .secondary
+    }
+
+    private var closeButtonColor: Color {
+        hovering ? Color.secondary : Color.primary.opacity(0.22)
+    }
+
     private var tabBackground: Color {
-        if isSelected {
-            return Color.primary.opacity(0.12)
-        }
-        if hovering {
-            return Color.primary.opacity(0.05)
-        }
-        return Color.clear
+        if isSelected { return Color(nsColor: appModel.theme.accent).opacity(0.14) }
+        if hovering { return Color.primary.opacity(0.05) }
+        return .clear
     }
 
     private var tabContextMenu: some View {

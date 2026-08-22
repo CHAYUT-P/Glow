@@ -76,7 +76,21 @@ final class TerminalSession: ObservableObject, Identifiable, LocalProcessTermina
         poll?()
     }
 
+    /// Whether this session has a running foreground job (shell has children
+    /// or foreground pgid != shell pgid). Used to decide if closing should prompt.
+    var hasRunningJob: Bool {
+        guard isRunning else { return false }
+        let pid = terminalView.process.shellPid
+        let fd = terminalView.process.childfd
+        return KillTree.hasRunningJob(pid: pid, fd: fd)
+    }
+
     func close() {
+        let pid = terminalView.process.shellPid
+        let fd = terminalView.process.childfd
+        if pid != 0 {
+            KillTree.terminate(pid: pid, fd: fd)
+        }
         terminalView.terminate()
     }
 

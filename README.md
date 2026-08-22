@@ -45,7 +45,12 @@ No code signing is needed for local use.
   on another tab's terminal moves that tab's shell into a split there. The
   highlighted half (left / right / top / bottom edge) shows where the new
   pane lands, and the drop zone indicator follows your cursor while dragging.
-- **Folders**: sidebar shows Home + recent folders. `Open…` (`Cmd+O`)
+- **Folders**: sidebar shows open tabs, Home + recent folders, styled as a
+  terminal pane (monospace type, box-drawing rules, row indexes like `01`,
+  `~` for home, a `:open ⏎` command in the status bar and a blinking block
+  cursor). Hovering any row previews its path (zsh-style abbreviated,
+  e.g. `~/p/glow`) in the status bar. Click a tab row to focus that tab;
+  double-click a folder to open it in a new tab. `Open…` (`Cmd+O`)
   uses a folder picker. Double-click a folder, or drag one from Finder onto
   the sidebar or the tab bar — a new tab starts there. No `cd` needed.
   Dropping files (or folders) directly on a terminal inserts their

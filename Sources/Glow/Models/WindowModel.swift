@@ -13,7 +13,7 @@ enum GlowWindowRequest: Hashable, Codable {
 /// Per-window state: the tabs (each a tree of split panes), selection,
 /// sidebar/find UI state, and the attention timer that watches background
 /// output.
-final class WindowModel: ObservableObject {
+final class WindowModel: NSObject, ObservableObject, NSWindowDelegate {
     @Published var tabs: [Tab] = []
     @Published var selectedTabID: UUID?
     @Published var sidebarVisible = true
@@ -50,6 +50,7 @@ final class WindowModel: ObservableObject {
     }
 
     init(request: GlowWindowRequest) {
+        super.init()
         switch request {
         case .plain:
             if AppModel.shared.consumeRestoreOnLaunch(), let last = AppModel.shared.layouts.last {
@@ -89,6 +90,7 @@ final class WindowModel: ObservableObject {
     }
 
     deinit {
+        if let win = window, win.delegate === self { win.delegate = nil }
         attentionTimer?.invalidate()
         observers.forEach { NotificationCenter.default.removeObserver($0) }
         if let appSettingsObserver { NotificationCenter.default.removeObserver(appSettingsObserver) }
@@ -170,6 +172,9 @@ final class WindowModel: ObservableObject {
     func closeTab(id: UUID) {
         guard let index = tabs.firstIndex(where: { $0.id == id }) else { return }
         let tab = tabs[index]
+        if AppModel.shared.settings.confirmBeforeClosingRunningProcess, tab.hasRunningJob {
+            if !confirmClose(tab: tab, verb: "Close Tab") { return }
+        }
         let focused = tab.focusedSession
         closedTabs.append(ClosedTabSnapshot(
             folder: focused?.folder ?? homeDirectory,
@@ -205,6 +210,10 @@ final class WindowModel: ObservableObject {
     func closeFocusedPaneOrTab() {
         guard let tab = selectedTab else { return }
         if tab.paneCount > 1 {
+            if AppModel.shared.settings.confirmBeforeClosingRunningProcess,
+               let session = tab.focusedSession, session.hasRunningJob {
+                if !confirmClosePane(session: session) { return }
+            }
             tab.closeFocusedPane()
         } else {
             closeSelectedTab()
@@ -523,9 +532,68 @@ final class WindowModel: ObservableObject {
 
     func attachWindow(_ newWindow: NSWindow?) {
         guard let newWindow, window !== newWindow else { return }
+        // Detach from previous window's delegate if it was us
+        if let old = window, old.delegate === self { old.delegate = nil }
         window = newWindow
         isKeyWindow = newWindow.isKeyWindow
         WindowRegistry.register(window: newWindow, model: self)
+        if newWindow.delegate == nil { newWindow.delegate = self }
+    }
+
+    // MARK: - Confirmation
+
+    private func confirmClose(tab: Tab, verb: String) -> Bool {
+        let name = tab.title.isEmpty ? "terminal" : tab.title
+        let alert = NSAlert()
+        alert.messageText = "\(verb): \"\(name)\" has a running process"
+        alert.informativeText = "Closing this tab will terminate the running process and its child processes."
+        alert.addButton(withTitle: "Terminate & Close")
+        alert.addButton(withTitle: "Cancel")
+        alert.alertStyle = .warning
+        return alert.runModal() == .alertFirstButtonReturn
+    }
+
+    private func confirmClosePane(session: TerminalSession) -> Bool {
+        let name = session.title.isEmpty ? "terminal" : session.title
+        let alert = NSAlert()
+        alert.messageText = "Close Pane: \"\(name)\" has a running process"
+        alert.informativeText = "Closing this pane will terminate the running process and its child processes."
+        alert.addButton(withTitle: "Terminate & Close")
+        alert.addButton(withTitle: "Cancel")
+        alert.alertStyle = .warning
+        return alert.runModal() == .alertFirstButtonReturn
+    }
+
+    private func confirmCloseWindowIfNeeded() -> Bool {
+        guard AppModel.shared.settings.confirmBeforeClosingRunningProcess else { return true }
+        let running = tabs.filter { $0.hasRunningJob }
+        guard !running.isEmpty else { return true }
+        let names = running.map { $0.title }.joined(separator: ", ")
+        let alert = NSAlert()
+        alert.messageText = "Close Window with Running Processes?"
+        alert.informativeText = "\(running.count) tab(s) have running processes (\(names)). Closing the window will terminate all of them."
+        alert.addButton(withTitle: "Terminate & Close")
+        alert.addButton(withTitle: "Cancel")
+        alert.alertStyle = .warning
+        return alert.runModal() == .alertFirstButtonReturn
+    }
+
+    // MARK: NSWindowDelegate
+
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        return confirmCloseWindowIfNeeded()
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        // Ensure every session's tree is killed even if windowShouldClose was bypassed
+        for tab in tabs {
+            for session in tab.allSessions {
+                session.close()
+            }
+        }
+        if let win = notification.object as? NSWindow, win.delegate === self {
+            win.delegate = nil
+        }
     }
 
     private func observeNotifications() {

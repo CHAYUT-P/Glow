@@ -9,6 +9,45 @@ struct GlowSettings: Codable, Equatable {
     var openLastLayoutOnLaunch = false
     var notifyOnCommandDone = true
     var globalHotkeyEnabled = true
+    var confirmBeforeClosingRunningProcess = true
+
+    enum CodingKeys: String, CodingKey {
+        case fontSize, fontName, themeName, openLastLayoutOnLaunch, notifyOnCommandDone, globalHotkeyEnabled, confirmBeforeClosingRunningProcess
+    }
+
+    init() {}
+
+    init(fontSize: Double = 13, fontName: String = "System Mono", themeName: String = "dark", openLastLayoutOnLaunch: Bool = false, notifyOnCommandDone: Bool = true, globalHotkeyEnabled: Bool = true, confirmBeforeClosingRunningProcess: Bool = true) {
+        self.fontSize = fontSize
+        self.fontName = fontName
+        self.themeName = themeName
+        self.openLastLayoutOnLaunch = openLastLayoutOnLaunch
+        self.notifyOnCommandDone = notifyOnCommandDone
+        self.globalHotkeyEnabled = globalHotkeyEnabled
+        self.confirmBeforeClosingRunningProcess = confirmBeforeClosingRunningProcess
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        fontSize = try c.decodeIfPresent(Double.self, forKey: .fontSize) ?? 13
+        fontName = try c.decodeIfPresent(String.self, forKey: .fontName) ?? "System Mono"
+        themeName = try c.decodeIfPresent(String.self, forKey: .themeName) ?? "dark"
+        openLastLayoutOnLaunch = try c.decodeIfPresent(Bool.self, forKey: .openLastLayoutOnLaunch) ?? false
+        notifyOnCommandDone = try c.decodeIfPresent(Bool.self, forKey: .notifyOnCommandDone) ?? true
+        globalHotkeyEnabled = try c.decodeIfPresent(Bool.self, forKey: .globalHotkeyEnabled) ?? true
+        confirmBeforeClosingRunningProcess = try c.decodeIfPresent(Bool.self, forKey: .confirmBeforeClosingRunningProcess) ?? true
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(fontSize, forKey: .fontSize)
+        try c.encode(fontName, forKey: .fontName)
+        try c.encode(themeName, forKey: .themeName)
+        try c.encode(openLastLayoutOnLaunch, forKey: .openLastLayoutOnLaunch)
+        try c.encode(notifyOnCommandDone, forKey: .notifyOnCommandDone)
+        try c.encode(globalHotkeyEnabled, forKey: .globalHotkeyEnabled)
+        try c.encode(confirmBeforeClosingRunningProcess, forKey: .confirmBeforeClosingRunningProcess)
+    }
 }
 
 /// Glow's themes follow a flat, reading-first palette: warm neutrals, a single
@@ -98,7 +137,7 @@ struct GlowTheme {
         caret: ns(0x9E9E9E),
         selectionBackground: ns(0x9E9E9E, alpha: 0.30),
         selectionForeground: ns(0xF2F2F0),
-        accent: ns(0x9E9E9E),
+        accent: ns(0xE0E0E0),
         chrome: ns(0x0D0D0D),
         separator: ns(0x262626),
         ansi: [
@@ -156,7 +195,7 @@ struct GlowTheme {
         caret: ns(0x9FB4D4),
         selectionBackground: ns(0x9FB4D4, alpha: 0.30),
         selectionForeground: ns(0x0A0F1E),
-        accent: ns(0x7CA3D6),
+        accent: ns(0xC2C8D2),
         chrome: ns(0x121829),
         separator: ns(0x243047),
         ansi: [
@@ -194,7 +233,7 @@ struct GlowTheme {
         caret: ns(0xA6BC8C),
         selectionBackground: ns(0xA6BC8C, alpha: 0.30),
         selectionForeground: ns(0x0F150C),
-        accent: ns(0x8FAF63),
+        accent: ns(0xC8CFC0),
         chrome: ns(0x181F12),
         separator: ns(0x2A3420),
         ansi: [
@@ -214,7 +253,7 @@ struct GlowTheme {
         caret: ns(0xC8C8C8),
         selectionBackground: ns(0xC8C8C8, alpha: 0.30),
         selectionForeground: ns(0x141414),
-        accent: ns(0xBB9AF7),
+        accent: ns(0xC8C8C8),
         chrome: ns(0x1C1C1C),
         separator: ns(0x323237),
         ansi: [

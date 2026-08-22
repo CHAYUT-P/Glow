@@ -14,7 +14,7 @@ struct ContentView: View {
         HStack(spacing: 0) {
             if model.sidebarVisible {
                 FolderSidebarView(model: model)
-                    .frame(width: 210)
+                    .frame(width: 224)
                 Rectangle()
                     .fill(Color(nsColor: appModel.theme.separator))
                     .frame(width: 1)
@@ -28,6 +28,7 @@ struct ContentView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Color(nsColor: appModel.theme.background))
+                TerminalToolbarView(model: model)
                 if model.findVisible {
                     FindBarView(model: model, findFocused: $findFocused)
                 }
@@ -93,29 +94,6 @@ private struct PaneNodeView: View {
                 )
                 .overlay(focusBorder(for: session).allowsHitTesting(false))
                 .overlay(dropZoneOverlay)
-                .overlay(alignment: .bottomTrailing) {
-                    if isSelectedTab && session.id == tab.focusedSessionID {
-                        Button {
-                            model.insertPickedFiles()
-                        } label: {
-                            Image(systemName: "paperclip")
-                                .font(.system(size: 12))
-                                .foregroundStyle(.secondary)
-                                .padding(5)
-                                .background(
-                                    Rectangle()
-                                        .fill(Color(nsColor: appModel.theme.chrome))
-                                        .overlay(
-                                            Rectangle()
-                                                .stroke(Color(nsColor: appModel.theme.separator), lineWidth: 1)
-                                        )
-                                )
-                        }
-                        .buttonStyle(.plain)
-                        .padding(8)
-                        .help("Attach File… (inserts file paths into the terminal; type @ first to mention them in Grok)")
-                    }
-                }
                 // Drag-and-drop is handled at the AppKit level by the
                 // terminal view itself (see GlowTerminalView) — SwiftUI's
                 // DropInfo item-provider bridge loses data for in-app drags,

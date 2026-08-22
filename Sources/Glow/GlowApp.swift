@@ -150,6 +150,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard AppModel.shared.settings.confirmBeforeClosingRunningProcess else { return .terminateNow }
+        // Collect unique WindowModels (a window may appear twice due to transient window lists)
+        var seen = Set<ObjectIdentifier>()
+        var runningTabs = 0
+        var models: [WindowModel] = []
+        for win in NSApp.windows {
+            guard let m = WindowRegistry.model(for: win) else { continue }
+            let id = ObjectIdentifier(m)
+            if seen.contains(id) { continue }
+            seen.insert(id)
+            models.append(m)
+            runningTabs += m.tabs.filter { $0.hasRunningJob }.count
+        }
+        if runningTabs == 0 { return .terminateNow }
+        let alert = NSAlert()
+        alert.messageText = "Quit Glow with Running Processes?"
+        alert.informativeText = "\(runningTabs) tab(s) have running processes. Quitting will terminate all of them."
+        alert.addButton(withTitle: "Terminate & Quit")
+        alert.addButton(withTitle: "Cancel")
+        alert.alertStyle = .warning
+        let result = alert.runModal()
+        if result == .alertFirstButtonReturn {
+            for m in models {
+                for tab in m.tabs {
+                    for session in tab.allSessions { session.close() }
+                }
+            }
+            return .terminateNow
+        }
+        return .terminateCancel
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         AppModel.shared.persistNow()
     }

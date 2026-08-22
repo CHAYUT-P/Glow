@@ -66,6 +66,8 @@ final class Tab: ObservableObject, Identifiable {
     var colorHex: String { focusedSession?.colorHex ?? "" }
     var attention: Bool { allSessions.contains { $0.attention } }
     var paneCount: Int { allSessions.count }
+    var hasRunningJob: Bool { allSessions.contains { $0.hasRunningJob } }
+    var focusedHasRunningJob: Bool { focusedSession?.hasRunningJob ?? false }
 
     var allSessions: [TerminalSession] {
         var result: [TerminalSession] = []
