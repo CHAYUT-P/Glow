@@ -15,7 +15,9 @@ enum GlowWindowRequest: Hashable, Codable {
 /// output.
 final class WindowModel: NSObject, ObservableObject, NSWindowDelegate {
     @Published var tabs: [Tab] = []
-    @Published var selectedTabID: UUID?
+    @Published var selectedTabID: UUID? {
+        didSet { observeSelectedTab() }
+    }
     @Published var sidebarVisible = true
     @Published var selectedFolder: String?
 
@@ -26,6 +28,12 @@ final class WindowModel: NSObject, ObservableObject, NSWindowDelegate {
     @Published var findMatchTotal = 0
     @Published var findFocusRequest = 0
 
+    /// Whether the find bar's text field currently holds focus — tracked
+    /// imperatively (FindBarView writes it from its @FocusState) so the ⌘W
+    /// interception can close find only when the keystroke lands in it,
+    /// and refocus the terminal only when it's actually leaving.
+    var findFieldFocused = false
+
     /// Not `@Published`: only the attention timer reads this, and setting it
     /// from window notifications must not invalidate the SwiftUI graph.
     private(set) var isKeyWindow = false
@@ -35,6 +43,7 @@ final class WindowModel: NSObject, ObservableObject, NSWindowDelegate {
     private var attentionTimer: Timer?
     private var observers: [NSObjectProtocol] = []
     private var appSettingsObserver: NSObjectProtocol?
+    private var selectedTabObserver: AnyCancellable?
 
     var selectedTab: Tab? {
         guard let id = selectedTabID else { return nil }
@@ -43,6 +52,15 @@ final class WindowModel: NSObject, ObservableObject, NSWindowDelegate {
 
     var selectedSession: TerminalSession? {
         selectedTab?.focusedSession
+    }
+
+    /// Re-publishes the selected tab's changes — title, cwd, pane focus — so
+    /// chrome bound only to the window model (status line, sidebar's active
+    /// row) stays live without each view subscribing to sessions directly.
+    /// Tab already forwards its sessions' objectWillChange into its own.
+    private func observeSelectedTab() {
+        selectedTabObserver = selectedTab?.objectWillChange
+            .sink { [weak self] _ in self?.objectWillChange.send() }
     }
 
     private var homeDirectory: String {
@@ -117,7 +135,7 @@ final class WindowModel: NSObject, ObservableObject, NSWindowDelegate {
     @discardableResult
     func newTab(folder: String? = nil, title: String? = nil, colorHex: String? = nil,
                 startCommand: String? = nil, select: Bool = true) -> Tab {
-        let dir = folder ?? selectedFolder ?? selectedSession?.cwd ?? homeDirectory
+        let dir = folder ?? selectedSession?.cwd ?? selectedFolder ?? homeDirectory
         let session = makeSession(folder: dir, title: title, colorHex: colorHex, startCommand: startCommand)
         let tab = Tab(session: session)
         tabs.append(tab)
@@ -177,7 +195,7 @@ final class WindowModel: NSObject, ObservableObject, NSWindowDelegate {
         }
         let focused = tab.focusedSession
         closedTabs.append(ClosedTabSnapshot(
-            folder: focused?.folder ?? homeDirectory,
+            folder: focused?.cwd ?? homeDirectory,
             title: focused?.title ?? "",
             colorHex: focused?.colorHex ?? "",
             startCommand: focused?.startCommand
@@ -188,7 +206,14 @@ final class WindowModel: NSObject, ObservableObject, NSWindowDelegate {
             session.close()
         }
         if selectedTabID == id {
-            selectedTabID = tabs.last?.id
+            // Select a neighbor (the tab that slid into this slot, else the
+            // one before it) — not the last tab in the bar.
+            let neighbor = index < tabs.count ? tabs[index] : tabs.last
+            if let neighbor {
+                selectTab(id: neighbor.id)
+            } else {
+                selectedTabID = nil
+            }
         }
         if tabs.isEmpty {
             newTab(folder: homeDirectory, title: nil, colorHex: nil, startCommand: nil)
@@ -220,11 +245,16 @@ final class WindowModel: NSObject, ObservableObject, NSWindowDelegate {
         }
     }
 
-    func moveTab(from sourceID: UUID, to targetID: UUID) {
-        guard let from = tabs.firstIndex(where: { $0.id == sourceID }),
-              let to = tabs.firstIndex(where: { $0.id == targetID }), from != to else { return }
+    /// Reorders a tab to gap `gap` — `0` is before the first tab,
+    /// `tabs.count` is after the last. Called continuously while a tab drag
+    /// hovers the bar, so it must no-op when the tab already sits at the gap.
+    func moveTab(draggedID: UUID, toGap gap: Int) {
+        guard let from = tabs.firstIndex(where: { $0.id == draggedID }) else { return }
+        guard gap != from, gap != from + 1 else { return }
         let tab = tabs.remove(at: from)
-        tabs.insert(tab, at: to)
+        var to = gap
+        if from < gap { to -= 1 }
+        tabs.insert(tab, at: min(max(to, 0), tabs.count))
     }
 
     // MARK: - Panes
@@ -273,6 +303,55 @@ final class WindowModel: NSObject, ObservableObject, NSWindowDelegate {
         case .up: return (.vertical, true)
         case .down: return (.vertical, false)
         }
+    }
+
+    /// Pulls one pane's session out of a split tab into its own tab —
+    /// "un-splitting" it. The session keeps running; only its place in the
+    /// UI changes. `index` is a gap in the tabs array (as shown by the drop
+    /// indicator); defaults to right after the source tab.
+    func moveSessionToNewTab(sessionID: UUID, fromTab sourceTabID: UUID, atIndex index: Int? = nil) {
+        guard let sourceIndex = tabs.firstIndex(where: { $0.id == sourceTabID }),
+              let session = tabs[sourceIndex].session(withID: sessionID) else { return }
+        let sourceTab = tabs[sourceIndex]
+        let removed = !sourceTab.detach(sessionID: sessionID)
+        if removed {
+            // The pane was the tab's only one — the husk goes away. Removed
+            // directly (not via removeEmptyTab): its empty-check would spawn a
+            // home tab before the moved session's tab is inserted below.
+            tabs.remove(at: sourceIndex)
+        }
+        var target = index ?? sourceIndex + 1
+        if removed, sourceIndex < target { target -= 1 }
+        let tab = Tab(session: session)
+        tabs.insert(tab, at: min(max(target, 0), tabs.count))
+        selectTab(id: tab.id)
+    }
+
+    /// ⌘/menu path for un-splitting: moves the focused pane of the selected
+    /// tab into a new tab placed right after it.
+    func moveFocusedPaneToNewTab() {
+        guard let tab = selectedTab, tab.paneCount > 1,
+              let session = tab.focusedSession else { return }
+        moveSessionToNewTab(sessionID: session.id, fromTab: tab.id)
+    }
+
+    /// Rearranges splits inside one tab: `sessionID`'s pane is pulled out of
+    /// the tree and re-docked next to `targetSessionID`'s pane on the side
+    /// `direction` points at.
+    func movePane(sessionID: UUID, inTab tabID: UUID,
+                  ontoPaneSessionID targetSessionID: UUID, direction: PaneDirection) {
+        guard sessionID != targetSessionID,
+              let tab = tabs.first(where: { $0.id == tabID }),
+              let session = tab.session(withID: sessionID),
+              tab.session(withID: targetSessionID) != nil else { return }
+        let (axis, placingFirst) = splitPlacement(for: direction)
+        // Detach keeps the session alive, then split re-docks the same leaf
+        // beside the target. Order matters: detaching first guarantees
+        // `pane(containing:)` can't find the freshly inserted copy.
+        guard tab.detach(sessionID: sessionID) else { return }
+        tab.split(paneSessionID: targetSessionID, axis: axis,
+                  newSession: session, placingFirst: placingFirst)
+        selectTab(id: tabID)
     }
 
     private func removeEmptyTab(_ id: UUID) {
@@ -448,6 +527,7 @@ final class WindowModel: NSObject, ObservableObject, NSWindowDelegate {
 
     func closeFind() {
         findVisible = false
+        findFieldFocused = false
         selectedSession?.terminalView.clearSearch()
         findText = ""
         findMatchIndex = 0

@@ -16,7 +16,11 @@ final class TerminalSession: ObservableObject, Identifiable, LocalProcessTermina
     @Published var attention = false
     @Published private(set) var isRunning = true
 
-    private(set) var cwd: String
+    @Published private(set) var cwd: String
+    /// Terminal grid size in cells, published for the resize HUD.
+    @Published private(set) var gridSize = GridSize(cols: 0, rows: 0)
+    /// Exit status of the last shell, shown by the exited-session overlay.
+    @Published private(set) var exitCode: Int32?
 
     private var titleIsCustom = false
     private var lastActivity = Date()
@@ -33,14 +37,18 @@ final class TerminalSession: ObservableObject, Identifiable, LocalProcessTermina
         let options = TerminalOptions(scrollback: 10_000)
         let view = GlowTerminalView(frame: .zero, options: options)
         self.terminalView = view
+        view.owningSessionID = id
         view.onCommandSubmit = { [weak self] in self?.noteCommandSubmit() }
         view.onActivity = { [weak self] in self?.noteActivity() }
+        view.onRestartRequest = { [weak self] in self?.restart() }
         view.processDelegate = self
         applyAppearance()
         start()
     }
 
     private func start() {
+        isRunning = true
+        exitCode = nil
         var env = ProcessInfo.processInfo.environment
         env["TERM"] = "xterm-256color"
         env["COLORTERM"] = "truecolor"
@@ -94,10 +102,11 @@ final class TerminalSession: ObservableObject, Identifiable, LocalProcessTermina
         terminalView.terminate()
     }
 
-    /// Restarts the shell in the same folder (and re-runs the start command).
+    /// Restarts the shell where it last was (and re-runs the start command).
     /// Only meaningful after the previous process terminated.
     func restart() {
         guard !isRunning else { return }
+        folder = cwd
         start()
     }
 
@@ -214,7 +223,13 @@ final class TerminalSession: ObservableObject, Identifiable, LocalProcessTermina
 
     // MARK: - LocalProcessTerminalViewDelegate
 
-    func sizeChanged(source: LocalProcessTerminalView, newCols: Int, newRows: Int) {}
+    func sizeChanged(source: LocalProcessTerminalView, newCols: Int, newRows: Int) {
+        let size = GridSize(cols: newCols, rows: newRows)
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.gridSize != size else { return }
+            self.gridSize = size
+        }
+    }
 
     func setTerminalTitle(source: LocalProcessTerminalView, title: String) {
         // SwiftTerm may call this from its feed queue.
@@ -233,7 +248,13 @@ final class TerminalSession: ObservableObject, Identifiable, LocalProcessTermina
 
     func processTerminated(source: TerminalView, exitCode: Int32?) {
         DispatchQueue.main.async { [weak self] in
+            self?.exitCode = exitCode
             self?.isRunning = false
         }
     }
+}
+
+struct GridSize: Equatable {
+    let cols: Int
+    let rows: Int
 }

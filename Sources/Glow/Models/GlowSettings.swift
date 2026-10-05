@@ -264,6 +264,16 @@ struct GlowTheme {
         ]
     )
 
+    /// ANSI palette entry `index` as an NSColor (SwiftTerm stores 16-bit
+    /// channels), for drawing theme previews outside the terminal.
+    func ansiNS(_ index: Int) -> NSColor {
+        let c = ansi[index]
+        return NSColor(srgbRed: CGFloat(c.red) / 65535,
+                       green: CGFloat(c.green) / 65535,
+                       blue: CGFloat(c.blue) / 65535,
+                       alpha: 1)
+    }
+
     static let all: [GlowTheme] = [dark, light, darker, earth, rawblock, midnight, sepia, moss, grok]
 
     static func forName(_ name: String) -> GlowTheme {

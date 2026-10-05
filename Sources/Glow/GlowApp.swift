@@ -53,6 +53,8 @@ struct GlowCommands: Commands {
                 .keyboardShortcut("d", modifiers: .command)
             Button("Split Down") { windowModel?.splitSelectedPane(axis: .vertical) }
                 .keyboardShortcut("d", modifiers: [.command, .shift])
+            Button("Move Pane to New Tab") { windowModel?.moveFocusedPaneToNewTab() }
+                .disabled((windowModel?.selectedTab?.paneCount ?? 0) <= 1)
             Divider()
             Button("Focus Pane Left") { windowModel?.focusPane(direction: .left) }
                 .keyboardShortcut(.leftArrow, modifiers: [.command, .option])
@@ -113,6 +115,14 @@ struct GlowCommands: Commands {
 
 struct WindowModelKey: FocusedValueKey {
     typealias Value = WindowModel
+}
+
+/// The WindowGroup scene's `openWindow`, captured by ContentView on appear.
+/// Lets the app delegate (dock reopen, global hotkey) create real
+/// WindowGroup windows — a manually built NSWindow is outside any scene, so
+/// `.focusedSceneValue` never reaches it and every menu command would no-op.
+enum WindowOpener {
+    static var open: ((GlowWindowRequest) -> Void)?
 }
 
 extension FocusedValues {
@@ -205,7 +215,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func openMainWindow() {
-        let content = ContentView(request: .plain)
+        if let open = WindowOpener.open {
+            open(.plain)
+            NSApp.setActivationPolicy(.regular)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+        // Fallback for before any ContentView has appeared: build the window
+        // manually (menu commands won't work in it, but it can't normally
+        // happen — SwiftUI always opens a window at launch). It must not
+        // register its scene-less openWindow as WindowOpener — that no-op
+        // would shadow the real scene opener for all later reopens.
+        let content = ContentView(request: .plain, registersWindowOpener: false)
         let hosting = NSHostingController(rootView: content)
         let window = NSWindow(contentViewController: hosting)
         window.title = "Glow"
@@ -224,6 +245,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let keyWindow = NSApp.keyWindow,
               !(keyWindow is NSPanel),
               let model = WindowRegistry.model(for: keyWindow) else { return false }
+        // ⌘W in the find field closes the find bar, not the shell
+        // underneath. When find is merely visible and the terminal holds
+        // focus, ⌘W falls through and closes the pane as usual.
+        if model.findVisible, model.findFieldFocused {
+            model.closeFind()
+            return true
+        }
+        // While a text field holds focus (e.g. inline tab rename), swallow
+        // ⌘W so it kills neither the tab nor the window mid-edit.
+        if keyWindow.firstResponder is NSTextView { return true }
         model.closeFocusedPaneOrTab()
         return true
     }
